@@ -174,233 +174,176 @@ class _LoginProfessionalScreenState extends State<LoginProfessionalScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBody: true,
-      resizeToAvoidBottomInset: true,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              'assets/images/onboarding_bg.jpg',
-              fit: BoxFit.cover,
-            ),
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [
-                      Color.fromARGB(220, 0, 0, 0),
-                      Color.fromARGB(140, 0, 0, 0),
-                      Color.fromARGB(60, 0, 0, 0),
-                      Colors.transparent,
-                    ],
-                    stops: [0.0, 0.25, 0.55, 1.0],
-                  ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 16),
+              // Bouton retour
+              Align(
+                alignment: Alignment.topLeft,
+                child: IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.arrow_back),
+                  padding: EdgeInsets.zero,
                 ),
               ),
-            ),
-          ),
-          SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 24),
+              // Logo et titre
+              Column(
                 children: [
-                  // Top bar
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: const [
-                      BackButton(color: Colors.white),
-                      Text('MoveEase', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                      SizedBox(width: 40),
-                    ],
-                  ),
-                  const SizedBox(height: 36),
-                  // Center title
-                  Center(
-                    child: Column(
-                      children: const [
-                        Icon(Icons.login_rounded, color: Colors.white70),
-                        SizedBox(height: 8),
-                        Text(
-                          "Connexion Professionnelle",
-                          style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
-                        ),
-                      ],
+                  // Logo circulaire avec icône professionnelle
+                  Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).primaryColor.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.business_center_outlined,
+                      size: 50,
+                      color: Colors.blue,
                     ),
                   ),
                   const SizedBox(height: 24),
-                  // Segmented control
-                  Container(
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            margin: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                            child: const Center(
-                              child: Text('Login', style: TextStyle(fontWeight: FontWeight.w600)),
-                            ),
-                          ),
+                  Text(
+                    'Connexion Professionnelle',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 24,
                         ),
-                        Expanded(
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(24),
-                            onTap: () => Navigator.pushReplacementNamed(context, '/register-professional'),
-                            child: Center(
-                              child: Text('Sign Up', style: TextStyle(color: Colors.white.withOpacity(0.9), fontWeight: FontWeight.w600)),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  // Themed pill inputs
-                  Theme(
-                    data: Theme.of(context).copyWith(
-                      inputDecorationTheme: InputDecorationTheme(
-                        filled: true,
-                        fillColor: Colors.white.withOpacity(0.85),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(28),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        children: [
-                          TextFormField(
-                            decoration: const InputDecoration(hintText: 'Enter your email', prefixIcon: Icon(Icons.alternate_email_rounded)),
-                            keyboardType: TextInputType.emailAddress,
-                            validator: (v) => v == null || !v.contains('@') ? 'Email invalide' : null,
-                            onSaved: (v) => _email = v,
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            decoration: const InputDecoration(hintText: 'Enter your password', prefixIcon: Icon(Icons.lock_outline_rounded)),
-                            obscureText: true,
-                            validator: (v) => v == null || v.length < 6 ? '6 caractères minimum' : null,
-                            onSaved: (v) => _password = v,
-                          ),
-                          const SizedBox(height: 16),
-                          if (_error != null)
-                            Text(_error!, style: const TextStyle(color: Colors.red)),
-                        ],
-                      ),
-                    ),
                   ),
                   const SizedBox(height: 8),
-                  // Gradient CTA
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(16),
-                        onTap: _loading ? null : _submit,
-                        child: Ink(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF5B5BFF), Color(0xFF6C4DFF)],
-                              begin: Alignment.centerLeft,
-                              end: Alignment.centerRight,
-                            ),
-                          ),
-                          child: Center(
-                            child: _loading
-                                ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                : const Text('Login', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
-                          ),
+                  Text(
+                    'Connectez-vous à votre espace professionnel',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 40),
+              // Formulaire de connexion
+              Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16.0),
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(color: Colors.red),
+                          textAlign: TextAlign.center,
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Divider with text
-                  Row(
-                    children: [
-                      Expanded(child: Container(height: 1, color: Colors.white24)),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 12.0),
-                        child: Text('Ou se connecter avec', style: TextStyle(color: Colors.white70)),
+                    TextFormField(
+                      decoration: const InputDecoration(
+                        labelText: 'Email professionnel',
+                        prefixIcon: Icon(Icons.email_outlined),
+                        border: OutlineInputBorder(),
                       ),
-                      Expanded(child: Container(height: 1, color: Colors.white24)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  // Social buttons (Google / Facebook)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: const BorderSide(color: Colors.white38),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            backgroundColor: Colors.white.withOpacity(0.12),
-                          ),
-                          onPressed: _loading ? null : () {},
-                          child: const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 12.0),
-                            child: Row(
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (v) => v == null || !v.contains('@') ? 'Email invalide' : null,
+                      onSaved: (v) => _email = v,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      decoration: const InputDecoration(
+                        labelText: 'Mot de passe',
+                        prefixIcon: Icon(Icons.lock_outline),
+                        border: OutlineInputBorder(),
+                      ),
+                      obscureText: true,
+                      validator: (v) => v == null || v.length < 6 ? '6 caractères minimum' : null,
+                      onSaved: (v) => _password = v,
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: _loading ? null : _submit,
+                        child: _loading
+                            ? const CircularProgressIndicator(color: Colors.white)
+                            : const Text(
+                                'Se connecter',
+                                style: TextStyle(fontSize: 16),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Divider avec texte
+                    Row(
+                      children: [
+                        Expanded(child: Container(height: 1, color: Colors.grey.shade300)),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12.0),
+                          child: Text('Ou se connecter avec', style: TextStyle(color: Colors.grey)),
+                        ),
+                        Expanded(child: Container(height: 1, color: Colors.grey.shade300)),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    // Boutons sociaux adaptés au nouveau design
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.grey.shade700,
+                              side: BorderSide(color: Colors.grey.shade300),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              padding: const EdgeInsets.symmetric(vertical: 12.0),
+                            ),
+                            onPressed: _loading ? null : () {},
+                            child: const Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.g_mobiledata, color: Colors.white),
+                                Icon(Icons.g_mobiledata, color: Colors.grey),
                                 SizedBox(width: 8),
                                 Text('Google'),
                               ],
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: const BorderSide(color: Colors.white38),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            backgroundColor: Colors.white.withOpacity(0.12),
-                          ),
-                          onPressed: _loading ? null : () {},
-                          child: const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 12.0),
-                            child: Row(
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.grey.shade700,
+                              side: BorderSide(color: Colors.grey.shade300),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              padding: const EdgeInsets.symmetric(vertical: 12.0),
+                            ),
+                            onPressed: _loading ? null : () {},
+                            child: const Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.facebook, color: Colors.white),
+                                Icon(Icons.facebook, color: Colors.grey),
                                 SizedBox(width: 8),
                                 Text('Facebook'),
                               ],
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
-                ],
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pushReplacementNamed(context, '/register-professional');
+                      },
+                      child: const Text("Vous n'avez pas de compte ? S'inscrire"),
+                    ),
+                  ],
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

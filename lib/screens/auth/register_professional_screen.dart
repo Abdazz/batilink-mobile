@@ -16,95 +16,60 @@ class _RegisterProfessionalScreenState extends State<RegisterProfessionalScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text('Inscription Professionnel', style: TextStyle(color: Colors.white)),
-        centerTitle: true,
+        title: const Text('Inscription Professionnel'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
-      body: Stack(
-        children: [
-          // Image de fond (asset existant) + léger dégradé sombre
-          Positioned.fill(
-            child: Image.asset(
-              'assets/images/onboarding_bg.jpg',
-              fit: BoxFit.cover,
-            ),
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [
-                      Color.fromARGB(160, 0, 0, 0),
-                      Color.fromARGB(60, 0, 0, 0),
-                      Colors.transparent,
-                    ],
-                    stops: [0.0, 0.4, 1.0],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
-                  child: Card(
-                    elevation: 8,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                    color: Colors.white.withOpacity(0.97),
-                    child: Padding(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Créer un compte professionnel",
-                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                          Row(
-                            children: [
-                              const Text("Déjà un compte ?"),
-                              TextButton(
-                                onPressed: () => Navigator.pushReplacementNamed(context, '/login-professional'),
-                                child: const Text(
-                                  "Se connecter",
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          SignUpForm(formKey: _formKey, centerButton: true, role: 'professional'),
-                        ],
-                      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 20),
+              // Logo et titre
+              Column(
+                children: [
+                  // Logo circulaire avec icône professionnelle
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).primaryColor.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.business_center_outlined,
+                      size: 40,
+                      color: Colors.blue,
                     ),
                   ),
-                ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Créer un compte professionnel',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 20,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Remplissez le formulaire ci-dessous pour créer votre compte professionnel',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
-            ),
+              const SizedBox(height: 32),
+              // Formulaire d'inscription (sans Card wrapper)
+              SignUpForm(formKey: _formKey, centerButton: true, role: 'professional'),
+            ],
           ),
-        ],
+        ),
       ),
-    );
-  }
-  // Widget utilitaire pour fallback sur icône Flutter si asset absent
-  Widget _buildSocialIcon(String assetPath, IconData fallback, Color color) {
-    return Image.asset(
-      assetPath,
-      height: 32,
-      width: 32,
-      errorBuilder: (context, error, stackTrace) {
-        return Icon(fallback, color: color, size: 32);
-      },
     );
   }
 }

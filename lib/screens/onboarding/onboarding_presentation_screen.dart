@@ -1,150 +1,112 @@
 import 'package:flutter/material.dart';
-import '../../constants.dart';
 
-class OnboardingPresentationScreen extends StatelessWidget {
+class OnboardingPresentationScreen extends StatefulWidget {
   const OnboardingPresentationScreen({Key? key}) : super(key: key);
+
+  @override
+  State<OnboardingPresentationScreen> createState() => _OnboardingPresentationScreenState();
+}
+
+class _OnboardingPresentationScreenState extends State<OnboardingPresentationScreen>
+    with TickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    );
+
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    ));
+
+    _scaleAnimation = Tween<double>(
+      begin: 0.8,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.elasticOut,
+    ));
+
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              'assets/images/onboarding_bg.jpg',
-              fit: BoxFit.cover,
-            ),
-          ),
-          // Bottom gradient overlay for text legibility
-          Positioned.fill(
-            child: IgnorePointer(
+      body: Container(
+        color: const Color(0xFFFFCC00), // Bleu primaire
+        child: SafeArea(
+          child: FadeTransition(
+            opacity: _fadeAnimation,
+            child: InkWell(
+              onTap: () {
+                Navigator.pushNamed(context, '/onboarding-role');
+              },
               child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [
-                      Color.fromARGB(200, 0, 0, 0),
-                      Color.fromARGB(120, 0, 0, 0),
-                      Color.fromARGB(40, 0, 0, 0),
-                      Colors.transparent,
-                    ],
-                    stops: [0.0, 0.25, 0.55, 1.0],
-                  ),
+                width: double.infinity,
+                height: double.infinity,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Icône et BATILINK centrés
+                    ScaleTransition(
+                      scale: _scaleAnimation,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          // Juste l'icône sans cercle
+                          const Icon(
+                            Icons.construction_outlined,
+                            size: 80,
+                            color: Colors.white,
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          // Texte BATILINK
+                          Text(
+                            "BATILINK",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 2.0,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black.withOpacity(0.3),
+                                  offset: const Offset(2, 2),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-          SafeArea(
-            child: Column(
-              children: [
-                const SizedBox(height: 32),
-                Text(
-                  "Batilink",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const Spacer(),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                  child: Column(
-                    children: [
-                      Text(
-                        "Batilink, une plateforme de connexion en entre client et professionnel du BTP!",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        "Batilink, une plateforme de connexion en entre client et professionnel du BTP!",
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 14,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 32),
-                      // Custom CTA button styled as in the mock
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(36),
-                          onTap: () {
-                            Navigator.pushReplacementNamed(context, '/onboarding-role');
-                          },
-                          child: Ink(
-                            width: double.infinity,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(36),
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF5B5BFF), Color.fromARGB(255, 7, 233, 56)],
-                                begin: Alignment.centerLeft,
-                                end: Alignment.centerRight,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                const SizedBox(width: 12),
-                                // Left circular icon
-                                Container(
-                                  width: 42,
-                                  height: 42,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: const LinearGradient(
-                                        colors: [Color.fromARGB(255, 12, 238, 50), Color.fromARGB(255, 7, 233, 56)],
-                                      end: Alignment.bottomRight,
-                                    ),
-                                  ),
-                                  child: const Icon(Icons.grid_view_rounded, color: Colors.white, size: 24),
-                                ),
-                                const SizedBox(width: 16),
-                                const Expanded(
-                                  child: Text(
-                                    'Commencer',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                // Right chevrons inside a small rounded capsule
-                                Container(
-                                  width: 44,
-                                  height: 44,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(22),
-                                  ),
-                                  child: const Icon(Icons.chevron_right, color: Colors.white, size: 28),
-                                ),
-                                const SizedBox(width: 12),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
