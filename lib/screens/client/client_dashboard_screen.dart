@@ -1,7 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:percent_indicator/percent_indicator.dart';
-import 'package:fl_chart/fl_chart.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../models/professional.dart';
+import '../../services/professional_service.dart';
+import '../../services/api_service.dart';
+import 'professional_search_screen.dart';
+import 'client_profile_screen.dart';
+import '../../constants.dart';
 
 class ClientDashboardScreen extends StatefulWidget {
   final String token;
@@ -10,7 +19,8 @@ class ClientDashboardScreen extends StatefulWidget {
   const ClientDashboardScreen({
     Key? key, 
     required this.token,
-    required this.userData, required Map profile,
+    required this.userData,
+    required Map profile,
   }) : super(key: key);
 
   @override
@@ -19,41 +29,248 @@ class ClientDashboardScreen extends StatefulWidget {
 
 class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
   int _selectedIndex = 0;
-  
-  // Données factices pour la démonstration
-  final List<Map<String, dynamic>> _upcomingAppointments = [
-    {
-      'title': 'Rendez-vous avec Jean Dupont',
-      'date': 'Aujourd\'hui, 14:30',
-      'service': 'Plomberie - Fuite évier',
-      'status': 'Confirmé',
-      'color': Colors.green,
-    },
-    {
-      'title': 'Devis en attente',
-      'date': 'Demain, 10:00',
-      'service': 'Électricité - Installation prises',
-      'status': 'En attente',
-      'color': Colors.orange,
-    },
-  ];
+  bool _isLoading = true;
+  List<Professional> _professionals = [];
+  List<dynamic> _favorites = [];
+  int _favoritesCount = 0;
+  final ProfessionalService _professionalService = ProfessionalService(baseUrl: 'http://10.0.2.2:8000');
 
-  final List<Map<String, dynamic>> _recentActivities = [
-    {
-      'title': 'Facture payée',
-      'date': 'Il y a 2 heures',
-      'amount': '120 €',
-      'icon': Icons.receipt,
-      'color': Colors.green,
-    },
-    {
-      'title': 'Nouveau message',
-      'date': 'Il y a 5 heures',
-      'amount': 'De : Plomberie Pro',
-      'icon': Icons.message,
-      'color': Colors.blue,
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadProfessionals();
+    _loadAppointments();
+    _loadRecentActivities();
+    _loadFavorites();
+  }
+
+  Future<void> _loadProfessionals() async {
+    setState(() => _isLoading = true);
+    try {
+      final professionals = await _professionalService.getInteractedProfessionals();
+      setState(() {
+        _professionals = professionals;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur lors du chargement des professionnels')),
+        );
+      }
+    }
+  }
+
+  Future<void> _toggleFavorite(Professional professional) async {
+    final success = await _professionalService.toggleFavorite(professional.id);
+    if (success && mounted) {
+      setState(() {
+        _professionals = _professionals.map((p) => 
+          p.id == professional.id ? professional.copyWith(isFavorite: !professional.isFavorite) : p
+        ).toList();
+      });
+    }
+  }
+
+  Widget _buildProfessionalCard(Professional professional) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          // Naviguer vers les détails du professionnel
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 30,
+                    backgroundColor: Colors.grey[200],
+                    backgroundImage: professional.avatarUrl != null
+                        ? CachedNetworkImageProvider(professional.avatarUrl!)
+                        : null,
+                    child: professional.avatarUrl == null
+                        ? Text(
+                            '${professional.firstName[0]}${professional.lastName[0]}',
+                            style: const TextStyle(fontSize: 20, color: primaryColor),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          professional.fullName,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          professional.profession,
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.star,
+                              color: Colors.amber[600],
+                              size: 16,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${professional.rating.toStringAsFixed(1)} (${professional.reviewCount})',
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      professional.isFavorite
+                          ? Icons.favorite
+                          : Icons.favorite_border,
+                      color: professional.isFavorite ? Colors.red : null,
+                    ),
+                    onPressed: () => _toggleFavorite(professional),
+                  ),
+                ],
+              ),
+              if (professional.lastInteraction != null) ...[
+                const Divider(height: 24),
+                Text(
+                  'Dernière interaction: ${DateFormat('dd/MM/yyyy').format(professional.lastInteraction!)}',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+              if (professional.lastReview != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Votre avis: ${professional.lastReview}',
+                  style: const TextStyle(fontStyle: FontStyle.italic),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_professionals.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.people_outline,
+              size: 64,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Aucun professionnel récent',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Les professionnels avec qui vous interagissez apparaîtront ici',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadProfessionals,
+      child: ListView.builder(
+        padding: const EdgeInsets.only(top: 8, bottom: 24),
+        itemCount: _professionals.length,
+        itemBuilder: (context, index) => _buildProfessionalCard(_professionals[index]),
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _upcomingAppointments = [];
+  List<Map<String, dynamic>> _recentActivities = [];
+
+  Future<void> _loadAppointments() async {
+    // TODO: Implémenter le chargement des rendez-vous depuis l'API
+    final appointments = [
+      {
+        'title': 'Rendez-vous',
+        'date': 'Demain, 10:00',
+        'service': 'Électricité - Installation prises',
+        'status': 'En attente',
+        'color': Colors.orange,
+      },
+    ];
+    
+    if (mounted) {
+      setState(() {
+        _upcomingAppointments = appointments;
+      });
+    }
+  }
+
+  Future<void> _loadRecentActivities() async {
+    // TODO: Implémenter le chargement des activités récentes depuis l'API
+    final activities = [
+      {
+        'title': 'Facture payée',
+        'date': 'Il y a 2 heures',
+        'amount': '120 €',
+        'icon': Icons.receipt,
+        'color': Colors.green,
+      },
+      {
+        'title': 'Nouveau message',
+        'date': 'Il y a 5 heures',
+        'amount': 'De : Plomberie Pro',
+        'icon': Icons.message,
+        'color': Colors.blue,
+      },
+    ];
+    
+    if (mounted) {
+      setState(() {
+        _recentActivities = activities;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -88,12 +305,42 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
             _buildNextAppointment(),
             const SizedBox(height: 24),
             _buildRecentActivities(),
+            const SizedBox(height: 24),
+            _buildRecentProfessionals(),
           ],
         ),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
+        onTap: (index) {
+          if (index == 1) { // Index pour l'onglet de recherche
+            if (widget.token.isNotEmpty) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => ProfessionalSearchScreen(
+                  token: widget.token,
+                  userData: widget.userData,
+                )),
+              );
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Token d\'authentification manquant. Veuillez vous reconnecter.')),
+              );
+            }
+            return; // Ne pas mettre à jour _selectedIndex pour rester sur l'onglet actuel
+          }
+          if (index == 3) { // Index pour l'onglet Profil
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => ClientProfileScreen(
+                token: widget.token,
+                userData: widget.userData,
+              )),
+            );
+            return; // Ne pas mettre à jour _selectedIndex pour rester sur l'onglet actuel
+          }
+          setState(() => _selectedIndex = index);
+        },
         type: BottomNavigationBarType.fixed,
         selectedItemColor: const Color(0xFF4CAF50),
         unselectedItemColor: Colors.grey,
@@ -108,7 +355,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.calendar_today),
-            label: 'Rendez-vous',
+            label: 'Mes professionnels',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),
@@ -231,7 +478,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
         Expanded(
           child: _buildStatCard(
             'Favoris',
-            '5',
+            _favoritesCount.toString(),
             Icons.favorite,
             const Color(0xFFE91E63),
           ),
@@ -491,6 +738,168 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
     );
   }
 
+  Widget _buildRecentProfessionals() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Professionnels récents',
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                // Navigate to all professionals screen
+              },
+              child: Text(
+                'Voir tout',
+                style: GoogleFonts.poppins(
+                  color: const Color(0xFF4CAF50),
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (_professionals.isEmpty)
+          _buildEmptyState(
+            'Aucun professionnel récent',
+            'Les professionnels avec qui vous interagissez apparaîtront ici',
+            Icons.people_outline,
+          )
+        else
+          SizedBox(
+            height: 200,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: _professionals.length,
+              itemBuilder: (context, index) {
+                final professional = _professionals[index];
+                return Container(
+                  width: 160,
+                  margin: const EdgeInsets.only(right: 12),
+                  child: Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        const SizedBox(height: 16),
+                        Stack(
+                          alignment: Alignment.topRight,
+                          children: [
+                            CircleAvatar(
+                              radius: 40,
+                              backgroundColor: Colors.grey[200],
+                              backgroundImage: professional.avatarUrl != null
+                                  ? CachedNetworkImageProvider(professional.avatarUrl!)
+                                  : null,
+                              child: professional.avatarUrl == null
+                                  ? Text(
+                                      '${professional.firstName[0]}${professional.lastName[0]}',
+                                      style: const TextStyle(
+                                          fontSize: 24, color: Color(0xFF4CAF50)),
+                                    )
+                                  : null,
+                            ),
+                            IconButton(
+                              icon: Icon(
+                                professional.isFavorite
+                                    ? Icons.favorite
+                                    : Icons.favorite_border,
+                                color: professional.isFavorite
+                                    ? Colors.red
+                                    : Colors.grey[400],
+                                size: 20,
+                              ),
+                              onPressed: () => _toggleFavorite(professional),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          professional.fullName,
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          professional.profession,
+                          style: GoogleFonts.poppins(
+                            color: Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.star,
+                              color: Colors.amber[600],
+                              size: 16,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              professional.rating.toStringAsFixed(1),
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: 120,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              // Navigate to professional details
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF4CAF50),
+                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: Text(
+                              'Contacter',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+              ),
+      ],
+    );
+  }
+
   Widget _buildActivityItem(Map<String, dynamic> activity) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -584,5 +993,40 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
         ],
       ),
     );
+  }
+  
+  void _loadFavorites() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('access_token');
+
+      if (token == null || token.isEmpty) {
+        print('Token manquant pour charger les favoris');
+        return;
+      }
+
+      final response = await http.get(
+        Uri.parse('${ApiService.baseUrl}/api/favorites/professionals'),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final favorites = data['data'] ?? [];
+
+        if (mounted) {
+          setState(() {
+            _favoritesCount = favorites.length;
+          });
+        }
+      } else {
+        print('Erreur lors du chargement des favoris: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Erreur lors du chargement des favoris: $e');
+    }
   }
 }

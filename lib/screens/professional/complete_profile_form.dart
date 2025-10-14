@@ -324,6 +324,7 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
         'is_available': _isAvailable,
         'skills': _skills,
         'business_hours': _getBusinessHoursJson(),
+        'profile_completed': true, // Marquer le profil comme complet lors de la soumission
         ...uploadedFiles, // Ajoute le chemin du document
       };
 

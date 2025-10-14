@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../constants.dart';
-import '../auth/sign_in_screen.dart';
-import '../auth/sign_up_screen.dart';
 
 class OnboardingAuthChoiceScreen extends StatelessWidget {
   final String? role;
@@ -75,7 +73,7 @@ class OnboardingAuthChoiceScreen extends StatelessWidget {
                             if (isProfessional) {
                               Navigator.pushNamed(context, '/login-professional');
                             } else {
-                              Navigator.push(context, MaterialPageRoute(builder: (_) => SignInScreen()));
+                              Navigator.pushReplacementNamed(context, '/client/login');
                             }
                           },
                         ),
@@ -87,7 +85,7 @@ class OnboardingAuthChoiceScreen extends StatelessWidget {
                             if (isProfessional) {
                               Navigator.pushNamed(context, '/register-professional');
                             } else {
-                              Navigator.push(context, MaterialPageRoute(builder: (_) => SignUpScreen()));
+                              Navigator.pushReplacementNamed(context, '/client/register');
                             }
                           },
                         ),

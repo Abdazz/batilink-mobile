@@ -83,7 +83,7 @@ class _RegisterProfessionalScreenState extends State<RegisterProfessionalScreen>
                             ],
                           ),
                           const SizedBox(height: 20),
-                          SignUpForm(formKey: _formKey, centerButton: true),
+                          SignUpForm(formKey: _formKey, centerButton: true, role: 'professional'),
                         ],
                       ),
                     ),

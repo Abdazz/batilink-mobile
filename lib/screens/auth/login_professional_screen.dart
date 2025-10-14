@@ -75,8 +75,19 @@ class _LoginProfessionalScreenState extends State<LoginProfessionalScreen> {
         if (profResp.statusCode == 200) {
           final profData = jsonDecode(profResp.body);
           final profile = (profData is Map && profData['data'] != null) ? profData['data'] : profData;
+
+          // Gérer les deux formats de données du profil
+          Map<String, dynamic> profileData;
+          if (profile is List && profile.isNotEmpty) {
+            profileData = profile[0] as Map<String, dynamic>;
+          } else if (profile is Map) {
+            profileData = profile as Map<String, dynamic>;
+          } else {
+            profileData = {};
+          }
+
           // Vérifier si le profil est marqué comme complet par l'API
-          if (profile['profile_completed'] == true) {
+          if (profileData['profile_completed'] == true) {
             // Aller vers le tableau de bord professionnel
             if (mounted) {
               Navigator.pushReplacementNamed(
@@ -92,11 +103,11 @@ class _LoginProfessionalScreenState extends State<LoginProfessionalScreen> {
             // Vérifier les champs manquants
             bool isEmptyStr(v) => v == null || (v is String && v.trim().isEmpty);
             final missing = <String>[];
-            if (isEmptyStr(profile['company_name'])) missing.add('company_name');
-            if (isEmptyStr(profile['job_title'])) missing.add('job_title');
-            if (isEmptyStr(profile['address'])) missing.add('address');
-            if (isEmptyStr(profile['city'])) missing.add('city');
-            if (isEmptyStr(profile['postal_code'])) missing.add('postal_code');
+            if (isEmptyStr(profileData['company_name'])) missing.add('company_name');
+            if (isEmptyStr(profileData['job_title'])) missing.add('job_title');
+            if (isEmptyStr(profileData['address'])) missing.add('address');
+            if (isEmptyStr(profileData['city'])) missing.add('city');
+            if (isEmptyStr(profileData['postal_code'])) missing.add('postal_code');
 
             if (missing.isNotEmpty) {
               // Aller vers l'écran de complétion du profil

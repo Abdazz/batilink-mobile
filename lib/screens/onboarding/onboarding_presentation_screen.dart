@@ -40,7 +40,7 @@ class OnboardingPresentationScreen extends StatelessWidget {
               children: [
                 const SizedBox(height: 32),
                 Text(
-                  "MoveEase",
+                  "Batilink",
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 22,
@@ -55,7 +55,7 @@ class OnboardingPresentationScreen extends StatelessWidget {
                   child: Column(
                     children: [
                       Text(
-                        "Powerful Trucks Muscle On Demand Anytime!",
+                        "Batilink, une plateforme de connexion en entre client et professionnel du BTP!",
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 24,
@@ -65,7 +65,7 @@ class OnboardingPresentationScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        "Powerful trucks, ready to deliver anytime anywhere you need.",
+                        "Batilink, une plateforme de connexion en entre client et professionnel du BTP!",
                         style: TextStyle(
                           color: Colors.white70,
                           fontSize: 14,
@@ -87,7 +87,7 @@ class OnboardingPresentationScreen extends StatelessWidget {
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(36),
                               gradient: const LinearGradient(
-                                colors: [Color(0xFF5B5BFF), Color(0xFF6C4DFF)],
+                                colors: [Color(0xFF5B5BFF), Color.fromARGB(255, 7, 233, 56)],
                                 begin: Alignment.centerLeft,
                                 end: Alignment.centerRight,
                               ),
@@ -102,8 +102,7 @@ class OnboardingPresentationScreen extends StatelessWidget {
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     gradient: const LinearGradient(
-                                      colors: [Color(0xFF3D3DFF), Color(0xFF7C6BFF)],
-                                      begin: Alignment.topLeft,
+                                        colors: [Color.fromARGB(255, 12, 238, 50), Color.fromARGB(255, 7, 233, 56)],
                                       end: Alignment.bottomRight,
                                     ),
                                   ),
@@ -112,7 +111,7 @@ class OnboardingPresentationScreen extends StatelessWidget {
                                 const SizedBox(width: 16),
                                 const Expanded(
                                   child: Text(
-                                    'Get Started',
+                                    'Commencer',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
                                       color: Colors.white,

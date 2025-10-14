@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'complete_profile_form.dart';
 import 'professional_nav_screen.dart';
+import '../../services/auth_service.dart';
 
 class ProfessionalCompleteProfileScreen extends StatefulWidget {
   final String token;
@@ -23,6 +24,7 @@ class ProfessionalCompleteProfileScreen extends StatefulWidget {
 
 class _ProfessionalCompleteProfileScreenState extends State<ProfessionalCompleteProfileScreen> {
   bool _isSubmitting = false;
+  final _auth = AuthService(baseUrl: 'http://10.0.2.2:8000');
 
   Future<void> _submitForm(Map<String, dynamic> formData) async {
     if (!mounted) return;
@@ -63,14 +65,59 @@ class _ProfessionalCompleteProfileScreenState extends State<ProfessionalComplete
                 backgroundColor: Colors.green,
               ),
             );
-            // Fermer tous les écrans et rediriger vers le tableau de bord
-            if (mounted) {
+
+            // Récupérer le profil mis à jour du serveur pour s'assurer de la cohérence
+            try {
+              print('Récupération du profil mis à jour...');
+              final updatedProfileResp = await _auth.getProfessionalProfile(accessToken: token);
+              if (updatedProfileResp.statusCode == 200) {
+                final updatedProfData = jsonDecode(updatedProfileResp.body);
+                final updatedProfile = (updatedProfData is Map && updatedProfData['data'] != null) ? updatedProfData['data'] : updatedProfData;
+                print('Profil mis à jour récupéré: $updatedProfile');
+                print('=== DEBUG - Profil récupéré après mise à jour ===');
+                if (updatedProfile is List && updatedProfile.isNotEmpty) {
+                  print('Premier élément du profil: ${updatedProfile[0]}');
+                  print('profile_completed dans le profil récupéré: ${updatedProfile[0]['profile_completed']}');
+                } else if (updatedProfile is Map) {
+                  print('profile_completed dans le profil récupéré: ${updatedProfile['profile_completed']}');
+                }
+                print('===============================================');
+
+                // Fermer tous les écrans et rediriger vers le tableau de bord avec le profil du serveur
+                if (mounted) {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ProfessionalNavScreen(
+                        token: token,
+                        profile: updatedProfile,
+                      ),
+                    ),
+                  );
+                }
+              } else {
+                print('Erreur récupération profil mis à jour: ${updatedProfileResp.statusCode}');
+                print('Réponse erreur: ${updatedProfileResp.body}');
+                // Utiliser les données locales en cas d'erreur
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProfessionalNavScreen(
+                      token: widget.token,
+                      profile: formData,
+                    ),
+                  ),
+                );
+              }
+            } catch (e) {
+              print('Erreur lors de la récupération du profil mis à jour: $e');
+              // Utiliser les données locales en cas d'erreur
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
                   builder: (context) => ProfessionalNavScreen(
                     token: widget.token,
-                    profile: formData, // Utiliser les données mises à jour
+                    profile: formData,
                   ),
                 ),
               );

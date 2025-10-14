@@ -6,12 +6,14 @@ class AuthService {
   final String baseUrl;
   AuthService({required this.baseUrl});
 
-  // Utilitaire pour l'émulateur Android : remplace localhost/127.0.0.1 par 10.0.2.2
+  // Retourne l'URL de base telle quelle (pas de conversion automatique)
   String get effectiveBaseUrl {
-    if (baseUrl.contains('localhost') || baseUrl.contains('127.0.0.1')) {
-      return baseUrl.replaceAll('localhost', '10.0.2.2').replaceAll('127.0.0.1', '10.0.2.2');
+    String url = baseUrl;
+    // Supprimer le slash final s'il existe
+    if (url.endsWith('/')) {
+      url = url.substring(0, url.length - 1);
     }
-    return baseUrl;
+    return url;
   }
 
   Future<http.Response> loginWithDevice({
@@ -65,9 +67,13 @@ class AuthService {
   Future<http.Response> login({
     required String email,
     required String password,
-    String deviceName = 'FlutterApp',
+    String deviceName = 'batilink-mobile',
   }) async {
     final url = Uri.parse('${effectiveBaseUrl}/api/login');
+    print('Tentative de connexion à: $url');
+    print('Email: $email');
+    print('Device: $deviceName');
+
     final response = await http.post(
       url,
       headers: {
@@ -80,6 +86,9 @@ class AuthService {
         'device_name': deviceName,
       }),
     );
+
+    print('Réponse de connexion: ${response.statusCode}');
+    print('Corps de la réponse: ${response.body}');
     return response;
   }
 
@@ -144,14 +153,12 @@ class AuthService {
     required String passwordConfirmation,
     required String role,
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/register');
-    final response = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode({
+    try {
+      final fullUrl = '${effectiveBaseUrl}/api/register';
+      print('Tentative d\'inscription vers: $fullUrl');
+      
+      final url = Uri.parse(fullUrl);
+      final body = {
         'first_name': firstName,
         'last_name': lastName,
         'email': email,
@@ -159,9 +166,26 @@ class AuthService {
         'password': password,
         'password_confirmation': passwordConfirmation,
         'role': role,
-      }),
-    );
-    return response;
+      };
+      
+      print('Corps de la requête: $body');
+      
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode(body),
+      );
+      
+      print('Réponse du serveur (${response.statusCode}): ${response.body}');
+      
+      return response;
+    } catch (e) {
+      print('Erreur lors de l\'inscription: $e');
+      rethrow;
+    }
   }
 
   Future<bool> logout(String token) async {

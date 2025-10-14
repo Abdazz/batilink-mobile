@@ -1,18 +1,12 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../services/auth_service.dart';
-import '../../services/portfolio_service.dart';
-import '../../models/portfolio_item.dart';
-
-// Créer une instance d'ImagePicker en dehors de la classe
-final ImagePicker _imagePicker = ImagePicker();
+import 'package:http/http.dart' as http;
+import 'package:google_fonts/google_fonts.dart';
 
 class ProfessionalSettingsScreen extends StatefulWidget {
   final String token;
-  
+
   const ProfessionalSettingsScreen({Key? key, required this.token}) : super(key: key);
 
   @override
@@ -20,647 +14,292 @@ class ProfessionalSettingsScreen extends StatefulWidget {
 }
 
 class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen> {
-  late Future<Map<String, dynamic>> _profileFuture = Future.value({});
-  final AuthService _authService = AuthService(baseUrl: 'http://10.0.2.2:8000');
-  final PortfolioService _portfolioService = PortfolioService(baseUrl: 'http://10.0.2.2:8000');
-  // État pour la gestion du portfolio
-  List<PortfolioItem> _portfolios = [];
-  bool _isLoadingPortfolios = false;
-  String _portfolioError = '';
-  File? _selectedImage;
-  
+  Map<String, dynamic> _profile = {};
+  bool _isLoading = true;
+  String _error = '';
+
   @override
   void initState() {
     super.initState();
-    _loadProfile();
-    _loadPortfolios();
+    _loadProfessionalProfile();
   }
-  
-  // Charger les portfolios
-  Future<void> _loadPortfolios() async {
-    if (mounted) {
-      setState(() {
-        _isLoadingPortfolios = true;
-        _portfolioError = '';
-      });
-    }
-    
+
+  Future<void> _loadProfessionalProfile() async {
     try {
+      setState(() {
+        _isLoading = true;
+        _error = '';
+      });
+
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? widget.token;
-      
-      final portfolios = await _portfolioService.getPortfolios(token);
-      
-      if (mounted) {
+
+      final response = await http.get(
+        Uri.parse('http://10.0.2.2:8000/api/professional/profile'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (data['success'] == true && data['data'] != null) {
+          // La structure contient "data" qui contient un tableau de profils
+          final profileData = data['data'];
+
+          if (profileData['data'] != null && (profileData['data'] as List).isNotEmpty) {
+            // IMPORTANT: Vérifier que nous récupérons le profil de l'utilisateur connecté
+            // Pour l'instant, prendre le premier profil (mais cela devrait être corrigé côté API)
+            final profile = profileData['data'][0];
+
+            // Vérification de sécurité : s'assurer que c'est bien notre profil
+            // En production, l'API devrait retourner uniquement le profil de l'utilisateur connecté
+            print('ID du profil récupéré: ${profile['id']}');
+
+            setState(() {
+              _profile = Map<String, dynamic>.from(profile);
+            });
+          } else {
+            setState(() {
+              _error = 'Aucun profil professionnel trouvé pour votre compte';
+            });
+          }
+        } else {
+          setState(() {
+            _error = 'Format de réponse inattendu de l\'API';
+          });
+        }
+      } else {
         setState(() {
-          _portfolios = portfolios;
+          _error = 'Erreur serveur: ${response.statusCode} - ${response.body}';
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _portfolioError = 'Erreur lors du chargement des portfolios: $e';
-        });
-      }
+      setState(() {
+        _error = 'Erreur de connexion: $e';
+      });
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoadingPortfolios = false;
-        });
-      }
-    }
-  }
-  
-  // Ajouter un nouveau portfolio
-  Future<void> _addPortfolio() async {
-    final titleController = TextEditingController();
-    final descriptionController = TextEditingController();
-    final categoryController = TextEditingController();
-    final tagsController = TextEditingController();
-    File? imageFile;
-    
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Ajouter un projet au portfolio'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Bouton d'ajout d'image
-              GestureDetector(
-                onTap: () async {
-                  final XFile? pickedFile = await _imagePicker.pickImage(source: ImageSource.gallery);
-                  if (pickedFile != null) {
-                    imageFile = File(pickedFile.path);
-                    // Mettre à jour l'aperçu de l'image si nécessaire
-                    setState(() {
-                      _selectedImage = imageFile;
-                    });
-                  }
-                },
-                child: Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: _selectedImage != null
-                      ? Image.file(_selectedImage!, fit: BoxFit.cover)
-                      : const Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.add_photo_alternate, size: 40, color: Colors.grey),
-                            Text('Ajouter une image', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))
-                          ],
-                        ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: titleController,
-                decoration: const InputDecoration(
-                  labelText: 'Titre du projet',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: descriptionController,
-                decoration: const InputDecoration(
-                  labelText: 'Description',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 3,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: categoryController,
-                decoration: const InputDecoration(
-                  labelText: 'Catégorie',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: tagsController,
-                decoration: const InputDecoration(
-                  labelText: 'Tags (séparés par des virgules)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Annuler'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (titleController.text.isNotEmpty && 
-                  descriptionController.text.isNotEmpty &&
-                  categoryController.text.isNotEmpty &&
-                  imageFile != null) {
-                Navigator.of(context).pop(true);
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Veuillez remplir tous les champs et ajouter une image')),
-                );
-              }
-            },
-            child: const Text('Enregistrer'),
-          ),
-        ],
-      ),
-    );
-    
-    if (result == true) {
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final token = prefs.getString('token') ?? widget.token;
-        
-        await _portfolioService.createPortfolio(
-          token: token,
-          title: titleController.text,
-          description: descriptionController.text,
-          category: categoryController.text,
-          tags: tagsController.text.split(',').map((e) => e.trim()).toList(),
-          imagePath: imageFile!.path,
-        );
-        
-        // Recharger la liste des portfolios
-        await _loadPortfolios();
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Portfolio ajouté avec succès')),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Erreur lors de l\'ajout du portfolio: $e')),
-          );
-        }
-      }
-    }
-  }
-  
-  // Supprimer un portfolio
-  Future<void> _deletePortfolio(String id) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirmer la suppression'),
-        content: const Text('Êtes-vous sûr de vouloir supprimer ce projet du portfolio ?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Annuler'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Supprimer'),
-          ),
-        ],
-      ),
-    );
-    
-    if (confirmed == true) {
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final token = prefs.getString('token') ?? widget.token;
-        
-        await _portfolioService.deletePortfolio(token, id);
-        
-        // Recharger la liste des portfolios
-        await _loadPortfolios();
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Portfolio supprimé avec succès')),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Erreur lors de la suppression: $e')),
-          );
-        }
-      }
-    }
-  }
-  
-  Future<void> _loadProfile() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token') ?? widget.token;
-      
-      final response = await _authService.getProfessionalProfile(accessToken: token);
-      
-      if (mounted) {
-        setState(() {
-          if (response.statusCode == 200) {
-            final responseData = jsonDecode(response.body);
-            print('Réponse complète du profil: $responseData'); // Debug
-            
-            Map<String, dynamic> profileData = {};
-            
-            if (responseData is Map && responseData['success'] == true) {
-              final responseDataData = responseData['data'];
-              
-              // Vérifier si nous avons un tableau de profils
-              if (responseDataData is Map && 
-                  responseDataData['data'] is List && 
-                  (responseDataData['data'] as List).isNotEmpty) {
-                // Prendre le premier profil de la liste
-                profileData = Map<String, dynamic>.from(responseDataData['data'][0]);
-              } else if (responseDataData is Map) {
-                // Si la structure est différente, essayer d'extraire directement
-                profileData = Map<String, dynamic>.from(responseDataData);
-              }
-            }
-            
-            print('Données du profil extraites: $profileData'); // Debug
-            _profileFuture = Future<Map<String, dynamic>>.value(profileData);
-          } else {
-            final error = 'Erreur ${response.statusCode}: ${response.body}';
-            print(error); // Debug
-            _profileFuture = Future.error(error);
-          }
-        });
-      }
-    } catch (e, stackTrace) {
-      print('Erreur lors du chargement du profil: $e');
-      print('Stack trace: $stackTrace');
-      
-      if (mounted) {
-        setState(() {
-          _profileFuture = Future.error(e.toString());
-        });
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur lors du chargement du profil: $e')),
-        );
-      }
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Map<String, dynamic>>(
-      future: _profileFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text('Erreur lors du chargement du profil'),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: _loadProfile,
-                  child: const Text('Réessayer'),
-                ),
-              ],
-            ),
-          );
-        }
-
-        final profile = snapshot.data ?? {};
-        
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Mon Profil'),
-            centerTitle: true,
-            elevation: 0,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                onPressed: _loadProfile,
-              ),
-            ],
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF4CAF50)),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text(
+          'Mon profil professionnel',
+          style: GoogleFonts.poppins(
+            color: Colors.black87,
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
           ),
-          body: SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // En-tête avec photo et nom
-                _buildProfileHeader(profile),
-                const SizedBox(height: 24),
-                
-                // Section Informations professionnelles
-                _buildSectionHeader('Informations professionnelles'),
-                _buildInfoItem(Icons.business_outlined, 'Entreprise', profile['company_name'] ?? 'Non renseigné'),
-                _buildInfoItem(Icons.work_outline, 'Métier', profile['job_title'] ?? 'Non renseigné'),
-                _buildInfoItem(Icons.description_outlined, 'Description', profile['description'] ?? 'Non renseignée'),
-                _buildInfoItem(Icons.work_history, 'Expérience', '${profile['experience_years']?.toString() ?? '0'} ans'),
-                _buildInfoItem(Icons.star_border, 'Note', '${profile['rating'] ?? '0'}/5 (${profile['completed_jobs'] ?? '0'} missions)'),
-                
-                const SizedBox(height: 24),
-                
-                // Section Adresse
-                _buildSectionHeader('Localisation'),
-                _buildInfoItem(Icons.location_on_outlined, 'Adresse', profile['address'] ?? 'Non renseignée'),
-                _buildInfoItem(Icons.location_city_outlined, 'Ville', profile['city'] ?? 'Non renseignée'),
-                _buildInfoItem(Icons.markunread_mailbox_outlined, 'Code postal', profile['postal_code'] ?? 'Non renseigné'),
-                _buildInfoItem(Icons.radar, 'Rayon d\'intervention', '${profile['radius_km'] ?? '0'} km'),
-                
-                const SizedBox(height: 24),
-                
-                // Section Tarification
-                _buildSectionHeader('Tarification'),
-                _buildInfoItem(Icons.attach_money_outlined, 'Taux horaire', '${profile['hourly_rate'] ?? '0'} FCFA'),
-                _buildInfoItem(Icons.attach_money_outlined, 'Prix minimum', '${profile['min_price'] ?? '0'} FCFA'),
-                _buildInfoItem(Icons.attach_money_outlined, 'Prix maximum', '${profile['max_price'] ?? '0'} FCFA'),
-                
-                const SizedBox(height: 24),
-                
-                // Section Compétences
-                _buildSectionHeader('Compétences'),
-                if (profile['skills'] != null && (profile['skills'] as List).isNotEmpty)
-                  ...(profile['skills'] as List).map<Widget>((skill) => 
-                    _buildInfoItem(
-                      Icons.check_circle_outline, 
-                      skill['name'] ?? 'Compétence', 
-                      'Niveau: ${skill['level'] ?? 'Non spécifié'} (${skill['experience_years'] ?? '0'} ans d\'expérience)'
-                    )
-                  ).toList()
-                else
-                  _buildInfoItem(Icons.info_outline, 'Aucune compétence ajoutée', 'Ajoutez vos compétences'),
-                
-                const SizedBox(height: 24),
-                
-                // Section Portfolio
-                _buildSectionHeader('Portfolio'),
-                if (_isLoadingPortfolios)
-                  const Center(child: CircularProgressIndicator())
-                else if (_portfolioError.isNotEmpty)
-                  _buildErrorPortfolioSection()
-                else if (_portfolios.isEmpty)
-                  _buildEmptyPortfolioSection()
-                else
-                  ..._portfolios.map((portfolio) => _buildPortfolioItem(portfolio)).toList(),
-                  
-                const SizedBox(height: 16),
-                Center(
-                  child: ElevatedButton.icon(
-                    onPressed: _addPortfolio,
-                    icon: const Icon(Icons.add, size: 20),
-                    label: const Text('Ajouter un projet'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    ),
-                  ),
-                ),
-                
-                const SizedBox(height: 24),
-                
-                // Section Paramètres du compte
-                _buildSectionHeader('Paramètres du compte'),
-                _buildSettingItem(
-                  icon: Icons.notifications_outlined,
-                  title: 'Notifications',
-                  onTap: () {}
-                ),
-                _buildSettingItem(
-                  icon: Icons.lock_outline,
-                  title: 'Sécurité',
-                  onTap: () {}
-                ),
-                _buildSettingItem(
-                  icon: Icons.help_outline,
-                  title: 'Aide & Support',
-                  onTap: () {}
-                ),
-                _buildSettingItem(
-                  icon: Icons.logout,
-                  title: 'Déconnexion',
-                  isLogout: true,
-                  onTap: () => _handleLogout(context),
-                ),
-                
-                const SizedBox(height: 32),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildProfileHeader(Map<String, dynamic> profile) {
-    return Center(
-      child: Column(
-        children: [
-          CircleAvatar(
-            radius: 50,
-            backgroundImage: profile['profile_photo_url'] != null 
-                ? NetworkImage(profile['profile_photo_url']) as ImageProvider
-                : const AssetImage('assets/images/default_avatar.png') as ImageProvider,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            '${profile['first_name'] ?? ''} ${profile['last_name'] ?? ''}',
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          if (profile['profession'] != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              profile['profession'],
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-              ),
-            ),
-          ],
-          const SizedBox(height: 8),
-          ElevatedButton.icon(
-            onPressed: () {
-              // TODO: Naviguer vers l'édition du profil
-            },
-            icon: const Icon(Icons.edit, size: 18),
-            label: const Text('Modifier le profil'),
-            style: ElevatedButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            ),
+        ),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Color(0xFF4CAF50)),
+            onPressed: _loadProfessionalProfile,
           ),
         ],
       ),
+      body: _buildBody(),
     );
   }
 
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-  Widget _buildInfoItem(IconData icon, String title, String value) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: Icon(icon, color: Theme.of(context).primaryColor),
-        title: Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+    if (_error.isNotEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+            const SizedBox(height: 16),
+            Text(
+              _error,
+              style: GoogleFonts.poppins(
+                color: Colors.red,
+                fontSize: 16,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _loadProfessionalProfile,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4CAF50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                'Réessayer',
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
+            ),
+          ],
         ),
-        subtitle: Text(
-          value.isNotEmpty ? value : 'Non renseigné',
-          style: TextStyle(color: value.isNotEmpty ? null : Colors.grey[600]),
-        ),
-        contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-        onTap: () {
-          // TODO: Gérer l'action de modification
-        },
-      ),
-    );
-  }
+      );
+    }
 
-  // Widget pour afficher un élément de portfolio
-  Widget _buildPortfolioItem(PortfolioItem portfolio) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Image du portfolio
-          if (portfolio.imageUrl != null)
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-              child: Image.network(
-                portfolio.imageUrl!,
-                width: double.infinity,
-                height: 200,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  height: 200,
-                  color: Colors.grey[200],
-                  child: const Icon(Icons.broken_image, size: 50, color: Colors.grey),
-                ),
+          // En-tête avec informations principales
+          _buildProfileHeader(),
+
+          const SizedBox(height: 32),
+
+          // Informations professionnelles
+          _buildSection('Informations professionnelles', [
+            _buildInfoRow(Icons.business, 'Entreprise', _profile['company_name'] ?? 'Non spécifiée'),
+            _buildInfoRow(Icons.work, 'Métier', _profile['job_title'] ?? 'Non spécifié'),
+            _buildInfoRow(Icons.description, 'Description', _profile['description'] ?? 'Non spécifiée'),
+            _buildInfoRow(Icons.star, 'Expérience', '${_profile['experience_years'] ?? 0} années'),
+            _buildInfoRow(Icons.verified, 'Statut', _profile['is_available'] == true ? 'Disponible' : 'Indisponible'),
+          ]),
+
+          const SizedBox(height: 24),
+
+          // Tarification
+          _buildSection('Tarification', [
+            _buildInfoRow(Icons.euro, 'Taux horaire', '${_profile['hourly_rate'] ?? '0'} FCFA'),
+            _buildInfoRow(Icons.arrow_upward, 'Prix minimum', '${_profile['min_price'] ?? '0'} FCFA'),
+            _buildInfoRow(Icons.arrow_downward, 'Prix maximum', '${_profile['max_price'] ?? '0'} FCFA'),
+          ]),
+
+          const SizedBox(height: 24),
+
+          // Localisation
+          _buildSection('Localisation', [
+            _buildInfoRow(Icons.location_on, 'Adresse', _profile['address'] ?? 'Non spécifiée'),
+            _buildInfoRow(Icons.location_city, 'Ville', _profile['city'] ?? 'Non spécifiée'),
+            _buildInfoRow(Icons.markunread_mailbox, 'Code postal', _profile['postal_code'] ?? 'Non spécifié'),
+            _buildInfoRow(Icons.radar, 'Rayon d\'intervention', '${_profile['radius_km'] ?? '0'} km'),
+          ]),
+
+          const SizedBox(height: 24),
+
+          // Compétences
+          _buildSkillsSection(),
+
+          const SizedBox(height: 24),
+
+          // Portfolio
+          _buildPortfolioSection(),
+
+          const SizedBox(height: 32),
+
+          // Paramètres du compte
+          _buildSection('Paramètres du compte', [
+            _buildSettingItem(Icons.notifications, 'Notifications', () {}),
+            _buildSettingItem(Icons.lock, 'Sécurité', () {}),
+            _buildSettingItem(Icons.help, 'Aide & Support', () {}),
+            _buildLogoutItem(),
+          ]),
+
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileHeader() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF4CAF50).withOpacity(0.1),
+            const Color(0xFF4CAF50).withOpacity(0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF4CAF50).withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF4CAF50).withOpacity(0.1),
+              border: Border.all(
+                color: const Color(0xFF4CAF50),
+                width: 3,
               ),
             ),
-          
-          // Contenu du portfolio
-          Padding(
-            padding: const EdgeInsets.all(12),
+            child: const Icon(
+              Icons.business,
+              color: Color(0xFF4CAF50),
+              size: 40,
+            ),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        portfolio.title,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    // Badge pour les projets mis en avant
-                    if (portfolio.isFeatured)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.amber[100],
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          'Mis en avant',
-                          style: TextStyle(fontSize: 10, color: Colors.orange[800]),
-                        ),
-                      ),
-                  ],
-                ),
-                
-                const SizedBox(height: 8),
-                
-                // Description
-                if (portfolio.description.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      portfolio.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.grey[700]),
-                    ),
+                Text(
+                  _profile['company_name'] ?? 'Entreprise',
+                  style: GoogleFonts.poppins(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
                   ),
-                
-                // Catégorie et date
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _profile['job_title'] ?? 'Métier non spécifié',
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    color: const Color(0xFF4CAF50),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Row(
                   children: [
-                    Icon(Icons.category_outlined, size: 14, color: Colors.grey[600]),
+                    Icon(Icons.star, size: 16, color: Colors.amber),
                     const SizedBox(width: 4),
                     Text(
-                      portfolio.category,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                    const Spacer(),
-                    if (portfolio.completedAt != null)
-                      Text(
-                        'Terminé le ${portfolio.completedAt!.day}/${portfolio.completedAt!.month}/${portfolio.completedAt!.year}',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      '${_profile['rating'] ?? '0'}/5',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
                       ),
-                  ],
-                ),
-                
-                // Tags
-                if (portfolio.tags.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: portfolio.tags.map((tag) => Chip(
-                      label: Text(tag, style: const TextStyle(fontSize: 11)),
-                      backgroundColor: Colors.grey[200],
-                      padding: EdgeInsets.zero,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    )).toList(),
-                  ),
-                ],
-                
-                // Actions
-                const Divider(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () => _deletePortfolio(portfolio.id),
-                      child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
                     ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: () {
-                        // TODO: Implémenter l'édition du portfolio
-                      },
-                      child: const Text('Modifier'),
+                    const SizedBox(width: 12),
+                    Icon(Icons.work, size: 16, color: Colors.blue),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_profile['completed_jobs'] ?? '0'} projets',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),
@@ -672,105 +311,325 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
     );
   }
 
-  // Widget pour afficher la section vide du portfolio
-  Widget _buildEmptyPortfolioSection() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            Icon(Icons.photo_library_outlined, size: 48, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            const Text(
-              'Aucun projet dans votre portfolio',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Ajoutez vos réalisations pour les montrer à vos clients potentiels',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey[600]),
-            ),
-          ],
+  Widget _buildSection(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
         ),
+        const SizedBox(height: 16),
+        ...children,
+      ],
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF4CAF50).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              icon,
+              color: const Color(0xFF4CAF50),
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
-  
-  // Widget pour afficher les erreurs de chargement du portfolio
-  Widget _buildErrorPortfolioSection() {
-    return Card(
-      color: Colors.red[50],
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Icon(Icons.error_outline, color: Colors.red[600]),
-            const SizedBox(height: 8),
-            Text(
-              _portfolioError,
-              style: TextStyle(color: Colors.red[800]),
-              textAlign: TextAlign.center,
+
+  Widget _buildSkillsSection() {
+    final skills = _profile['skills'] as List<dynamic>? ?? [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Compétences',
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (skills.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(height: 8),
-            ElevatedButton.icon(
-              onPressed: _loadPortfolios,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('Réessayer'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red[50],
-                foregroundColor: Colors.red[800],
+            child: Text(
+              'Aucune compétence ajoutée',
+              style: GoogleFonts.poppins(
+                color: Colors.grey[600],
               ),
             ),
-          ],
+          )
+        else
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: skills.map<Widget>((skill) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _getSkillLevelColor(skill['level'] ?? 'beginner').withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: _getSkillLevelColor(skill['level'] ?? 'beginner'),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _getSkillIcon(skill['level'] ?? 'beginner'),
+                      size: 16,
+                      color: _getSkillLevelColor(skill['level'] ?? 'beginner'),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      skill['name'] ?? 'Compétence',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: _getSkillLevelColor(skill['level'] ?? 'beginner'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${skill['experience_years'] ?? 0} ans',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildPortfolioSection() {
+    final portfolios = _profile['portfolios'] as List<dynamic>? ?? [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Portfolio',
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (portfolios.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.photo_library_outlined, size: 48, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  'Aucun projet dans le portfolio',
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey[600],
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Ajoutez vos réalisations pour les montrer à vos clients',
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey[500],
+                    fontSize: 14,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          )
+        else
+          // TODO: Afficher les projets du portfolio quand ils seront disponibles
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '${portfolios.length} projet(s) dans le portfolio',
+              style: GoogleFonts.poppins(
+                color: Colors.grey[600],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSettingItem(IconData icon, String title, VoidCallback onTap) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: ListTile(
+        leading: Icon(icon, color: const Color(0xFF4CAF50)),
+        title: Text(
+          title,
+          style: GoogleFonts.poppins(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+        onTap: onTap,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
         ),
       ),
     );
   }
 
-  Widget _buildSettingItem({
-    required IconData icon,
-    required String title,
-    bool isLogout = false,
-    required VoidCallback onTap,
-  }) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
+  Widget _buildLogoutItem() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.red[50],
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey[200]!),
+        border: Border.all(color: Colors.red[200]!),
       ),
       child: ListTile(
-        leading: Icon(icon, color: isLogout ? Colors.red : Colors.blue),
+        leading: const Icon(Icons.logout, color: Colors.red),
         title: Text(
-          title,
-          style: TextStyle(
-            color: isLogout ? Colors.red : null,
+          'Déconnexion',
+          style: GoogleFonts.poppins(
+            fontSize: 16,
             fontWeight: FontWeight.w500,
+            color: Colors.red,
           ),
         ),
-        trailing: const Icon(Icons.chevron_right, size: 20),
-        onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.red),
+        onTap: () => _handleLogout(context),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
       ),
     );
+  }
+
+  Color _getSkillLevelColor(String level) {
+    switch (level.toLowerCase()) {
+      case 'expert':
+        return Colors.green;
+      case 'intermediate':
+        return Colors.orange;
+      case 'beginner':
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getSkillIcon(String level) {
+    switch (level.toLowerCase()) {
+      case 'expert':
+        return Icons.verified;
+      case 'intermediate':
+        return Icons.trending_up;
+      case 'beginner':
+        return Icons.school;
+      default:
+        return Icons.star;
+    }
   }
 
   Future<void> _handleLogout(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Déconnexion'),
-        content: const Text('Êtes-vous sûr de vouloir vous déconnecter ?'),
+        title: Text(
+          'Déconnexion',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+        ),
+        content: Text(
+          'Êtes-vous sûr de vouloir vous déconnecter ?',
+          style: GoogleFonts.poppins(),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Annuler'),
+            child: Text(
+              'Annuler',
+              style: GoogleFonts.poppins(),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Déconnexion', style: TextStyle(color: Colors.red)),
+            child: Text(
+              'Déconnexion',
+              style: GoogleFonts.poppins(color: Colors.red),
+            ),
           ),
         ],
       ),
@@ -778,23 +637,14 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
 
     if (confirmed == true) {
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token') ?? widget.token;
-      
-      final success = await _authService.logout(token);
-      
+      await prefs.clear(); // Vider toutes les préférences
+
       if (mounted) {
-        if (success) {
-          // Rediriger vers l'écran de connexion
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            '/login', // Assurez-vous que cette route est définie dans votre application
-            (route) => false,
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Erreur lors de la déconnexion')),
-          );
-        }
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/onboarding-role',
+          (route) => false,
+        );
       }
     }
   }
