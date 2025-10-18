@@ -1,183 +1,228 @@
-import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../models/portfolio_item.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:convert';
 
 class PortfolioService {
   final String baseUrl;
-  final String _basePath = '/api/professional/portfolios';
 
   PortfolioService({required this.baseUrl});
 
-  // Récupérer la liste des portfolios
-  Future<List<PortfolioItem>> getPortfolios(String token) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl$_basePath'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Accept': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          final List<dynamic> portfolios = data['data'] ?? [];
-          return portfolios
-              .map((item) => PortfolioItem.fromJson(item))
-              .toList();
-        }
-        throw Exception('Erreur lors de la récupération des portfolios');
-      } else {
-        throw Exception(
-            'Erreur serveur: ${response.statusCode} - ${response.body}');
-      }
-    } catch (e) {
-      throw Exception('Erreur réseau: $e');
+  String get effectiveBaseUrl {
+    String url = baseUrl;
+    if (url.endsWith('/')) {
+      url = url.substring(0, url.length - 1);
     }
+    return url;
   }
 
-  // Créer un nouveau portfolio
-  Future<PortfolioItem> createPortfolio({
-    required String token,
+  /// Récupère la liste des portfolios du professionnel connecté
+  Future<http.Response> getPortfolios({required String accessToken}) async {
+    final url = Uri.parse('${effectiveBaseUrl}/api/professional/portfolios');
+    final response = await http.get(
+      url,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    );
+    return response;
+  }
+
+  /// Récupère un portfolio spécifique
+  Future<http.Response> getPortfolio({
+    required String accessToken,
+    required String portfolioId,
+  }) async {
+    final url = Uri.parse('${effectiveBaseUrl}/api/professional/portfolios/$portfolioId/');
+    final response = await http.get(
+      url,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    );
+    return response;
+  }
+
+  /// Crée un nouveau portfolio
+  Future<http.StreamedResponse> createPortfolio({
+    required String accessToken,
     required String title,
     required String description,
     required String category,
-    required List<String> tags,
-    required String imagePath,
-    bool isFeatured = false,
-    DateTime? completedAt,
-  }) async {
-    try {
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$baseUrl$_basePath'),
-      );
-
-      // Ajouter les champs texte
-      request.fields['title'] = title;
-      request.fields['description'] = description;
-      request.fields['category'] = category;
-      request.fields['is_featured'] = isFeatured.toString();
-      if (completedAt != null) {
-        request.fields['completed_at'] = completedAt.toIso8601String();
-      }
-      
-      // Ajouter les tags
-      for (var tag in tags) {
-        request.fields['tags[]'] = tag;
-      }
-
-      // Ajouter le fichier image
-      request.files.add(await http.MultipartFile.fromPath('image', imagePath));
-
-      // Ajouter le token d'authentification
-      request.headers['Authorization'] = 'Bearer $token';
-      request.headers['Accept'] = 'application/json';
-
-      // Envoyer la requête
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
-
-      if (response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return PortfolioItem.fromJson(data['data']);
-        }
-        throw Exception('Erreur lors de la création du portfolio');
-      } else {
-        throw Exception(
-            'Erreur serveur: ${response.statusCode} - ${response.body}');
-      }
-    } catch (e) {
-      throw Exception('Erreur réseau: $e');
-    }
-  }
-
-  // Mettre à jour un portfolio existant
-  Future<PortfolioItem> updatePortfolio({
-    required String token,
-    required String id,
-    String? title,
-    String? description,
-    String? category,
+    required String filePath,
     List<String>? tags,
-    String? imagePath,
     bool? isFeatured,
-    DateTime? completedAt,
+    String? completedAt,
+    String? fileName,
   }) async {
-    try {
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$baseUrl$_basePath/$id?_method=PUT'),
+    final url = Uri.parse('${effectiveBaseUrl}/api/professional/portfolios'); // Ajout du slash final comme attendu par Laravel
+    final request = http.MultipartRequest('POST', url);
+
+    request.headers.addAll({
+      'Accept': 'application/json',
+      'Authorization': 'Bearer $accessToken',
+    });
+
+    request.fields['title'] = title;
+    request.fields['description'] = description;
+    request.fields['category'] = category; // Laravel attend 'category', pas 'project_type'
+
+    if (tags != null && tags.isNotEmpty) {
+      request.fields['tags'] = jsonEncode(tags);
+      print('🏷️ tags envoyés: $tags');
+    }
+
+    if (isFeatured != null) {
+      // Laravel peut attendre un entier (1/0) pour les champs booléens
+      request.fields['is_featured'] = isFeatured ? '1' : '0';
+      print('🔧 is_featured envoyé: ${isFeatured ? '1' : '0'}');
+    }
+
+    if (completedAt != null && completedAt.isNotEmpty) {
+      request.fields['project_date'] = completedAt; // Laravel attend 'project_date', pas 'completed_at'
+      print('📅 project_date envoyé: $completedAt');
+    }
+
+    print('📁 Chemin du fichier image: $filePath');
+    final file = await http.MultipartFile.fromPath(
+      'image',
+      filePath,
+      // Spécifier explicitement le type MIME pour aider l'API
+    );
+    print('✅ Fichier image préparé pour envoi avec type MIME: ${file.contentType}');
+    request.files.add(file);
+
+    print('🚀 Envoi de la requête avec les champs: ${request.fields}');
+    print('📎 Nombre de fichiers attachés: ${request.files.length}');
+
+    return await request.send();
+  }
+
+  /// Met à jour un portfolio existant
+  Future<http.StreamedResponse> updatePortfolio({
+    required String accessToken,
+    required String portfolioId,
+    required String title,
+    required String description,
+    required String category,
+    List<String>? tags,
+    bool? isFeatured,
+    String? completedAt,
+    String? filePath,
+    String? fileName,
+  }) async {
+    final url = Uri.parse('${effectiveBaseUrl}/api/professional/portfolios/$portfolioId'); // Ajout du slash final
+    final request = http.MultipartRequest('POST', url);
+
+    request.headers.addAll({
+      'Accept': 'application/json',
+      'Authorization': 'Bearer $accessToken',
+    });
+
+    // Utiliser _method=PUT pour simuler une requête PUT
+    request.fields['_method'] = 'PUT';
+    request.fields['title'] = title;
+    request.fields['description'] = description;
+    request.fields['category'] = category; // Laravel attend 'category', pas 'project_type'
+
+    if (tags != null && tags.isNotEmpty) {
+      request.fields['tags'] = jsonEncode(tags);
+      print('🏷️ tags envoyés: $tags');
+    }
+
+    if (isFeatured != null) {
+      // Laravel peut attendre un entier (1/0) pour les champs booléens
+      request.fields['is_featured'] = isFeatured ? '1' : '0';
+      print('🔧 is_featured envoyé: ${isFeatured ? '1' : '0'}');
+    }
+
+    if (completedAt != null && completedAt.isNotEmpty) {
+      request.fields['project_date'] = completedAt; // Laravel attend 'project_date', pas 'completed_at'
+      print('📅 project_date envoyé: $completedAt');
+    }
+
+    if (filePath != null) {
+      print('📁 Chemin du fichier image: $filePath');
+      final file = await http.MultipartFile.fromPath(
+        'image',
+        filePath,
+        // Spécifier explicitement le type MIME pour aider l'API
       );
+      print('✅ Fichier image préparé pour envoi avec type MIME: ${file.contentType}');
+      request.files.add(file);
+    }
 
-      // Ajouter les champs texte
-      if (title != null) request.fields['title'] = title;
-      if (description != null) request.fields['description'] = description;
-      if (category != null) request.fields['category'] = category;
-      if (isFeatured != null) {
-        request.fields['is_featured'] = isFeatured.toString();
-      }
-      if (completedAt != null) {
-        request.fields['completed_at'] = completedAt.toIso8601String();
-      }
-      
-      // Ajouter les tags s'ils sont fournis
-      if (tags != null) {
-        for (var tag in tags) {
-          request.fields['tags[]'] = tag;
-        }
-      }
+    print('🚀 Envoi de la requête avec les champs: ${request.fields}');
+    print('📎 Nombre de fichiers attachés: ${request.files.length}');
 
-      // Ajouter le fichier image s'il est fourni
-      if (imagePath != null) {
-        request.files.add(await http.MultipartFile.fromPath('image', imagePath));
-      }
+    return await request.send();
+  }
 
-      // Ajouter le token d'authentification
-      request.headers['Authorization'] = 'Bearer $token';
-      request.headers['Accept'] = 'application/json';
+  /// Supprime un portfolio
+  Future<http.Response> deletePortfolio({
+    required String accessToken,
+    required String portfolioId,
+  }) async {
+    final url = Uri.parse('${effectiveBaseUrl}/api/professional/portfolios/$portfolioId'); // Ajout du slash final
+    final response = await http.delete(
+      url,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    );
+    return response;
+  }
 
-      // Envoyer la requête
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return PortfolioItem.fromJson(data['data']);
-        }
-        throw Exception('Erreur lors de la mise à jour du portfolio');
-      } else {
-        throw Exception(
-            'Erreur serveur: ${response.statusCode} - ${response.body}');
-      }
+  /// Sélectionne un fichier image pour le portfolio
+  Future<FilePickerResult?> pickImage() async {
+    try {
+      return await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+      );
     } catch (e) {
-      throw Exception('Erreur réseau: $e');
+      print('Erreur lors de la sélection du fichier: $e');
+      return null;
     }
   }
 
-  // Supprimer un portfolio
-  Future<bool> deletePortfolio(String token, String id) async {
-    try {
-      final response = await http.delete(
-        Uri.parse('$baseUrl$_basePath/$id'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Accept': 'application/json',
-        },
-      );
+  /// Valide les données du portfolio avant envoi
+  Map<String, String> validatePortfolioData({
+    required String title,
+    required String description,
+    required String category,
+    String? filePath,
+  }) {
+    final errors = <String, String>{};
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['success'] == true;
-      } else {
-        throw Exception(
-            'Erreur serveur: ${response.statusCode} - ${response.body}');
-      }
-    } catch (e) {
-      throw Exception('Erreur réseau: $e');
+    if (title.trim().isEmpty) {
+      errors['title'] = 'Le titre est requis';
+    } else if (title.trim().length > 255) {
+      errors['title'] = 'Le titre ne peut pas dépasser 255 caractères';
+    } else if (title.trim().length < 3) {
+      errors['title'] = 'Le titre doit contenir au moins 3 caractères';
     }
+
+    if (description.trim().isNotEmpty && description.trim().length > 255) {
+      errors['description'] = 'La description ne peut pas dépasser 255 caractères';
+    } else if (description.trim().isEmpty) {
+      errors['description'] = 'La description est requise';
+    } else if (description.trim().length < 10) {
+      errors['description'] = 'La description doit contenir au moins 10 caractères';
+    }
+
+    if (category.trim().isEmpty) {
+      errors['category'] = 'La catégorie est requise';
+    } else if (category.trim().length > 100) {
+      errors['category'] = 'La catégorie ne peut pas dépasser 100 caractères';
+    }
+
+    if (filePath == null || filePath.isEmpty) {
+      errors['image'] = 'Une image est requise';
+    }
+
+    return errors;
   }
 }

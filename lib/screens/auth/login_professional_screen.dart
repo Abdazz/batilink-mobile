@@ -19,8 +19,48 @@ class _LoginProfessionalScreenState extends State<LoginProfessionalScreen> {
   bool _loading = false;
   String? _error;
 
+  // Méthode pour vérifier localement si le profil est complet basé sur les données du serveur
+  bool _isProfileCompleteFromData(dynamic data) {
+    print('DEBUG : _isProfileCompleteFromData appelé avec data: $data');
+
+    // Support pour structure imbriquée (data['data']) ou directe
+    final responseData = data['data'] ?? data;
+
+    final user = responseData['user'];
+    print('DEBUG : user trouvé: $user');
+    if (user == null || user['role'] != 'professional') {
+      print('DEBUG : user null ou rôle pas professional');
+      return false;
+    }
+
+    final professional = user['professional'];
+    print('DEBUG : professional trouvé: $professional');
+    if (professional == null) {
+      print('DEBUG : professional null');
+      return false;
+    }
+
+    // Vérifier les champs requis (même logique que côté serveur)
+    final companyName = professional['company_name']?.toString().trim();
+    final jobTitle = professional['job_title']?.toString().trim();
+    final address = professional['address']?.toString().trim();
+    final city = professional['city']?.toString().trim();
+    final postalCode = professional['postal_code']?.toString().trim();
+
+    print('DEBUG : Champs extraits - companyName: "$companyName", jobTitle: "$jobTitle", address: "$address", city: "$city", postalCode: "$postalCode"');
+
+    // Vérifier si tous les champs sont présents ET non vides
+    final isComplete = (companyName != null && companyName.isNotEmpty) &&
+           (jobTitle != null && jobTitle.isNotEmpty) &&
+           (address != null && address.isNotEmpty) &&
+           (city != null && city.isNotEmpty) &&
+           (postalCode != null && postalCode.isNotEmpty);
+
+    print('DEBUG : _isProfileCompleteFromData retourne: $isComplete');
+    return isComplete;
+  }
+
   String? _extractToken(dynamic data) {
-    if (data == null) return null;
     if (data is String) return data;
     if (data is Map) {
       // Formats courants
@@ -68,81 +108,74 @@ class _LoginProfessionalScreenState extends State<LoginProfessionalScreen> {
       }
       // Sauvegarder le token en session
       await SessionService().saveToken(token.toString());
-      setState(() { _loading = true; });
-      try {
-        final profResp = await _authService.getProfessionalProfile(accessToken: token);
-        setState(() { _loading = false; });
-        if (profResp.statusCode == 200) {
-          final profData = jsonDecode(profResp.body);
-          final profile = (profData is Map && profData['data'] != null) ? profData['data'] : profData;
 
-          // Gérer les deux formats de données du profil
-          Map<String, dynamic> profileData;
-          if (profile is List && profile.isNotEmpty) {
-            profileData = profile[0] as Map<String, dynamic>;
-          } else if (profile is Map) {
-            profileData = profile as Map<String, dynamic>;
-          } else {
-            profileData = {};
-          }
+      // Récupérer la redirection depuis la réponse de login (si présente)
+      final responseData = data['data'] ?? data; // Support pour structure imbriquée ou directe
+      final redirectTo = responseData['redirect_to']?.toString();
+      final profileCompleted = responseData['profile_completed'];
 
-          // Vérifier si le profil est marqué comme complet par l'API
-          if (profileData['profile_completed'] == true) {
-            // Aller vers le tableau de bord professionnel
-            if (mounted) {
-              Navigator.pushReplacementNamed(
-                context,
-                '/pro/nav',
-                arguments: {
-                  'token': token.toString(),
-                  'profile': profile,
-                },
-              );
-            }
-          } else {
-            // Vérifier les champs manquants
-            bool isEmptyStr(v) => v == null || (v is String && v.trim().isEmpty);
-            final missing = <String>[];
-            if (isEmptyStr(profileData['company_name'])) missing.add('company_name');
-            if (isEmptyStr(profileData['job_title'])) missing.add('job_title');
-            if (isEmptyStr(profileData['address'])) missing.add('address');
-            if (isEmptyStr(profileData['city'])) missing.add('city');
-            if (isEmptyStr(profileData['postal_code'])) missing.add('postal_code');
+      print('DEBUG : Données reçues du serveur:');
+      print('DEBUG : profileCompleted: $profileCompleted');
+      print('DEBUG : redirectTo: $redirectTo');
+      print('DEBUG : responseData[user][professional]: ${responseData['user']?['professional']}');
 
-            if (missing.isNotEmpty) {
-              // Aller vers l'écran de complétion du profil
-              if (mounted) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ProfessionalCompleteProfileScreen(
-                      token: token.toString(),
-                      profile: profile,
-                      missingFields: missing,
-                    ),
-                  ),
-                );
-              }
-            } else {
-              // Si aucun champ n'est manquant mais que le profil n'est pas marqué comme complet
-              // On marque le profil comme complet et on redirige vers le tableau de bord
-              if (mounted) {
-                Navigator.pushReplacementNamed(
-                  context,
-                  '/pro/nav',
-                  arguments: {
-                    'token': token.toString(),
-                    'profile': profile,
-                  },
-                );
-              }
-            }
-          }
+      // Logique de redirection basée sur la réponse serveur (PRIORITAIRE)
+      bool shouldRedirectToDashboard = false;
+
+      // Prioriser la réponse serveur sur toute logique locale
+      if (profileCompleted == false) {
+        shouldRedirectToDashboard = false;
+        print('DEBUG : Serveur dit profil incomplet');
+      } else if (profileCompleted == true) {
+        shouldRedirectToDashboard = true;
+        print('DEBUG : Serveur dit profil complet');
+      } else {
+        // Si le serveur ne fournit pas profile_completed, utiliser redirect_to
+        if (redirectTo == '/professional/profile/complete') {
+          shouldRedirectToDashboard = false;
+          print('DEBUG : redirect_to indique completion');
+        } else if (redirectTo == '/dashboard/professional') {
+          shouldRedirectToDashboard = true;
+          print('DEBUG : redirect_to indique dashboard');
         } else {
-          setState(() { _error = 'Impossible de récupérer le profil (${profResp.statusCode})'; });
+          // Fallback: vérifier localement si le profil semble complet
+          print('DEBUG : Aucun flag serveur, utilisation vérification locale');
+          shouldRedirectToDashboard = _isProfileCompleteFromData(data);
         }
-      } catch (e) {
-        setState(() { _loading = false; _error = 'Erreur réseau lors de la récupération du profil'; });
+      }
+
+      print('Décision finale : shouldRedirectToDashboard=$shouldRedirectToDashboard');
+      print('Raison : profileCompleted=$profileCompleted, redirectTo=$redirectTo');
+
+      if (shouldRedirectToDashboard) {
+        print('DEBUG : Redirection vers dashboard');
+        // Profil complet, aller vers le tableau de bord professionnel
+        if (mounted) {
+          Navigator.pushReplacementNamed(
+            context,
+            '/pro/nav',
+            arguments: {
+              'token': token.toString(),
+              'profile_completed': true,
+            },
+          );
+        }
+      } else {
+        print('DEBUG : Redirection vers complétion du profil');
+        // Profil incomplet - rediriger directement vers l'écran de complétion
+        // Pas besoin de récupérer le profil car il n'existe pas encore (profile_completed=false)
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ProfessionalCompleteProfileScreen(
+                token: token.toString(),
+                profile: {}, // Profil vide car il n'existe pas encore
+                missingFields: [], // Pas besoin de calculer ici
+              ),
+            ),
+          );
+        }
       }
     } else {
       try {

@@ -34,6 +34,13 @@ class AuthService {
         'device_name': deviceName,
       }),
     );
+
+    // Débogage pour voir la réponse brute
+    print('=== DEBUG LOGIN RESPONSE ===');
+    print('Status: ${response.statusCode}');
+    print('Body: ${response.body}');
+    print('Headers: ${response.headers}');
+
     return response;
   }
   Future<http.Response> registerProfessional({
@@ -95,7 +102,10 @@ class AuthService {
   Future<http.Response> getProfessionalProfile({
     required String accessToken,
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/professional/profile');
+    final url = Uri.parse('${effectiveBaseUrl}/api/professional/profile/me');
+    print('=== DEBUG - Récupération profil professionnel ===');
+    print('URL: $url');
+
     final response = await http.get(
       url,
       headers: {
@@ -103,6 +113,49 @@ class AuthService {
         'Authorization': 'Bearer $accessToken',
       },
     );
+
+    print('Réponse profil: ${response.statusCode}');
+    print('Corps réponse profil: ${response.body}');
+    return response;
+  }
+
+  Future<http.Response> getCurrentUser({
+    required String accessToken,
+  }) async {
+    final url = Uri.parse('${effectiveBaseUrl}/api/user');
+    print('=== DEBUG - Récupération utilisateur actuel ===');
+    print('URL: $url');
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    );
+
+    print('Réponse user: ${response.statusCode}');
+    print('Corps réponse user: ${response.body}');
+    return response;
+  }
+
+  Future<http.Response> getClientProfile({
+    required String accessToken,
+  }) async {
+    final url = Uri.parse('${effectiveBaseUrl}/api/client/profile');
+    print('=== DEBUG - Récupération profil client ===');
+    print('URL: $url');
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    );
+
+    print('Réponse profil client: ${response.statusCode}');
+    print('Corps réponse profil client: ${response.body}');
     return response;
   }
 
@@ -120,6 +173,55 @@ class AuthService {
       },
       body: jsonEncode(payload),
     );
+    return response;
+  }
+
+  Future<http.Response> updateBusinessHours({
+    required String accessToken,
+    required String businessHoursJson,
+  }) async {
+    final url = Uri.parse('${effectiveBaseUrl}/api/professional/profile/update-hours');
+    final response = await http.put(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+      body: jsonEncode({
+        'business_hours': businessHoursJson,
+      }),
+    );
+    return response;
+  }
+
+  Future<http.Response> updateProfessionalProfile({
+    required String accessToken,
+    required Map<String, dynamic> payload,
+    String? profileId,
+  }) async {
+    final url = profileId != null && profileId.isNotEmpty
+        ? '${effectiveBaseUrl}/api/professional/profile/$profileId'
+        : '${effectiveBaseUrl}/api/professional/profile';
+
+    print('=== DEBUG UPDATE PROFILE ===');
+    print('URL: $url');
+    print('Profile ID: $profileId');
+    print('Payload: $payload');
+    print('===========================');
+
+    final response = await http.put(
+      Uri.parse(url),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+      body: jsonEncode(payload),
+    );
+
+    print('Réponse update profile: ${response.statusCode}');
+    print('Corps réponse: ${response.body}');
     return response;
   }
 
@@ -203,7 +305,7 @@ class AuthService {
       if (response.statusCode == 200) {
         // Supprimer le token du stockage local
         final prefs = await SharedPreferences.getInstance();
-        await prefs.remove('token');
+        await prefs.remove('access_token');
         await prefs.remove('user');
         return true;
       }
@@ -212,5 +314,42 @@ class AuthService {
       print('Erreur lors de la déconnexion: $e');
       return false;
     }
+  }
+
+  Future<Map<String, dynamic>?> parseProfessionalProfileResponse(http.Response response) async {
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+
+      if (data['success'] == true && data['data'] != null) {
+        final profileData = data['data'];
+
+        // Nouvelle structure: data.data est un tableau
+        if (profileData is Map && profileData['data'] != null && (profileData['data'] as List).isNotEmpty) {
+          final profiles = profileData['data'] as List;
+
+          // Chercher le profil avec les données les plus récentes (pas par défaut)
+          for (var profile in profiles) {
+            if (profile is Map<String, dynamic>) {
+              final companyName = profile['company_name'] ?? '';
+              if (companyName != 'Entreprise par défaut' && companyName.isNotEmpty) {
+                return profile;
+              }
+            }
+          }
+
+          // Si pas trouvé, retourner le premier profil valide
+          for (var profile in profiles) {
+            if (profile is Map<String, dynamic> && profile['id'] != null) {
+              return profile;
+            }
+          }
+        }
+        // Ancienne structure: data est directement le profil
+        else if (profileData is Map<String, dynamic>) {
+          return profileData;
+        }
+      }
+    }
+    return null;
   }
 }

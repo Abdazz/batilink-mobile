@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../services/dashboard_service.dart';
 
 class ProfessionalDashboardScreen extends StatefulWidget {
   final String token;
@@ -22,10 +20,13 @@ class _ProfessionalDashboardScreenState extends State<ProfessionalDashboardScree
   Map<String, dynamic> _dashboardData = {};
   bool _isLoading = true;
   String _error = '';
+  bool _isRefreshing = false;
+  late DashboardService _dashboardService;
 
   @override
   void initState() {
     super.initState();
+    _dashboardService = DashboardService(baseUrl: 'http://10.0.2.2:8000');
     _loadDashboardData();
   }
 
@@ -36,35 +37,16 @@ class _ProfessionalDashboardScreenState extends State<ProfessionalDashboardScree
         _error = '';
       });
 
-      // Récupération des données depuis l'API
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token') ?? widget.token;
+      // Utiliser le service DashboardService pour récupérer les données
+      final data = await _dashboardService.getAllDashboardData();
 
-      final response = await http.get(
-        Uri.parse('http://localhost:8000/api/professional/dashboard'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Accept': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        if (data['success'] == true && data['data'] != null) {
-          setState(() {
-            _dashboardData = Map<String, dynamic>.from(data['data']);
-          });
-        } else {
-          throw Exception('Format de réponse inattendu');
-        }
-      } else {
-        throw Exception('Erreur serveur: ${response.statusCode}');
-      }
-    } catch (e) {
-      // En cas d'erreur, utiliser des données de secours
-      print('Erreur API, utilisation des données simulées: $e');
       setState(() {
+        _dashboardData = data;
+      });
+    } catch (e) {
+      print('Erreur API, utilisation des données de secours: $e');
+      setState(() {
+        _error = 'Erreur de connexion. Utilisation des données de démonstration.';
         _dashboardData = {
           'total_leads': 24,
           'pending_leads': 8,
@@ -83,6 +65,33 @@ class _ProfessionalDashboardScreenState extends State<ProfessionalDashboardScree
     } finally {
       setState(() {
         _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _refreshDashboardData() async {
+    if (_isRefreshing) return;
+
+    setState(() {
+      _isRefreshing = true;
+    });
+
+    try {
+      // Utiliser le service DashboardService pour récupérer les données
+      final data = await _dashboardService.getAllDashboardData();
+
+      setState(() {
+        _dashboardData = data;
+        _error = '';
+      });
+    } catch (e) {
+      print('Erreur lors du rafraîchissement: $e');
+      setState(() {
+        _error = 'Erreur lors du rafraîchissement des données.';
+      });
+    } finally {
+      setState(() {
+        _isRefreshing = false;
       });
     }
   }
@@ -107,10 +116,21 @@ class _ProfessionalDashboardScreenState extends State<ProfessionalDashboardScree
         ),
         centerTitle: true,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFF4CAF50)),
-            onPressed: _loadDashboardData,
-          ),
+          if (_isRefreshing)
+            Container(
+              width: 20,
+              height: 20,
+              margin: const EdgeInsets.only(right: 16),
+              child: const CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4CAF50)),
+              ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Color(0xFF4CAF50)),
+              onPressed: _refreshDashboardData,
+            ),
         ],
       ),
       body: _buildBody(),
@@ -157,7 +177,7 @@ class _ProfessionalDashboardScreenState extends State<ProfessionalDashboardScree
     }
 
     return RefreshIndicator(
-      onRefresh: _loadDashboardData,
+      onRefresh: _refreshDashboardData,
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -278,14 +298,14 @@ class _ProfessionalDashboardScreenState extends State<ProfessionalDashboardScree
         ),
         _buildMetricCard(
           'Revenus',
-          '${_dashboardData['total_revenue']?.toStringAsFixed(0) ?? '0'} €',
+          '${(_dashboardData['total_revenue'] ?? 0.0).toStringAsFixed(0)} €',
           Icons.euro,
           Colors.orange,
           'Ce mois',
         ),
         _buildMetricCard(
           'Note moyenne',
-          '${_dashboardData['average_rating'] ?? '0'}/5',
+          '${(_dashboardData['average_rating'] ?? 0.0).toStringAsFixed(1)}/5',
           Icons.star,
           Colors.amber,
           'Basé sur les avis',
@@ -422,7 +442,7 @@ class _ProfessionalDashboardScreenState extends State<ProfessionalDashboardScree
           ),
           const SizedBox(height: 16),
           Text(
-            'Taux de conversion: ${totalLeads > 0 ? ((convertedLeads / totalLeads) * 100).toStringAsFixed(1) : '0'}%',
+            'Taux de conversion: ${totalLeads > 0 ? ((convertedLeads.toDouble() / totalLeads.toDouble()) * 100).toStringAsFixed(1) : '0.0'}%',
             style: GoogleFonts.poppins(
               fontSize: 14,
               fontWeight: FontWeight.w500,
@@ -535,14 +555,18 @@ class _ProfessionalDashboardScreenState extends State<ProfessionalDashboardScree
             )
           else
             ...activities.take(3).map<Widget>((activity) {
+              final activityType = activity['type']?.toString() ?? 'unknown';
+              final activityMessage = activity['message']?.toString() ?? 'Activité inconnue';
+              final activityTime = activity['time']?.toString() ?? 'Il y a longtemps';
+
               return Container(
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: _getActivityColor(activity['type']).withOpacity(0.1),
+                  color: _getActivityColor(activityType).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: _getActivityColor(activity['type']).withOpacity(0.3),
+                    color: _getActivityColor(activityType).withOpacity(0.3),
                   ),
                 ),
                 child: Row(
@@ -550,11 +574,11 @@ class _ProfessionalDashboardScreenState extends State<ProfessionalDashboardScree
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: _getActivityColor(activity['type']),
+                        color: _getActivityColor(activityType),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(
-                        _getActivityIcon(activity['type']),
+                        _getActivityIcon(activityType),
                         color: Colors.white,
                         size: 16,
                       ),
@@ -565,7 +589,7 @@ class _ProfessionalDashboardScreenState extends State<ProfessionalDashboardScree
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            activity['message'],
+                            activityMessage,
                             style: GoogleFonts.poppins(
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
@@ -574,7 +598,7 @@ class _ProfessionalDashboardScreenState extends State<ProfessionalDashboardScree
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            activity['time'],
+                            activityTime,
                             style: GoogleFonts.poppins(
                               fontSize: 12,
                               color: Colors.grey[600],

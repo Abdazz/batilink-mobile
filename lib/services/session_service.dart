@@ -1,7 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SessionService {
-  static const _kAccessToken = 'access_token';
+  static const _kAccessToken = 'token';
 
   Future<void> saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();

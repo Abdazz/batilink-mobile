@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/professional.dart';
+import '../unified_quotation_detail_screen.dart' as unified_screen;
 import 'quote_request_screen.dart';
 
 class ProfessionalDetailScreen extends StatefulWidget {
@@ -31,6 +32,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
   late TabController _tabController;
   List<Map<String, dynamic>> _reviews = [];
   List<Map<String, dynamic>> _portfolios = [];
+  Map<String, dynamic> _reviewDetails = {}; // Pour stocker les détails des devis associés aux avis
   final List<Map<String, dynamic>> _tabs = [
     {'label': 'À propos', 'icon': Icons.info_outline},
     {'label': 'Portfolio', 'icon': Icons.photo_library_outlined},
@@ -97,9 +99,9 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
   }
 
   Future<void> _loadProfessionalData() async {
-    if (mounted) {
-      setState(() => _isLoading = true);
-    }
+    if (!mounted) return;
+
+    setState(() => _isLoading = true);
 
     try {
       print('Chargement des données pour le professionnel: ${widget.professionalId}');
@@ -151,6 +153,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
 
         // Charger les détails supplémentaires si disponibles
         _loadReviews();
+        _loadPortfolios();
 
       } else {
         final error = jsonDecode(utf8.decode(response.bodyBytes));
@@ -202,6 +205,10 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
             _reviews = List<Map<String, dynamic>>.from(reviewsData);
           });
         }
+
+        // Charger les détails des devis associés aux avis si disponibles
+        _loadReviewQuotationDetails();
+
       } else if (response.statusCode == 404 || response.statusCode == 500) {
         // Endpoint non trouvé ou erreur serveur - utiliser une liste vide
         print('Avis non disponibles pour ce professionnel (code: ${response.statusCode})');
@@ -224,10 +231,122 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
     }
   }
 
+  Future<void> _loadReviewQuotationDetails() async {
+    try {
+      // Récupérer le token d'authentification
+      final token = widget.token ?? await _getTokenFromPrefs();
+
+      if (token == null || token.isEmpty) {
+        return;
+      }
+
+      // Pour chaque avis, essayer de récupérer les détails du devis associé
+      for (var review in _reviews) {
+        final quotationId = review['quotation_id'];
+        if (quotationId != null) {
+          try {
+            final quotationUrl = 'http://10.0.2.2:8000/api/quotations/$quotationId';
+            final response = await http.get(
+              Uri.parse(quotationUrl),
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $token',
+              },
+            );
+
+            if (response.statusCode == 200) {
+              final responseData = json.decode(utf8.decode(response.bodyBytes));
+              final quotationData = responseData is Map ? responseData['data'] : null;
+
+              if (quotationData != null) {
+                setState(() {
+                  _reviewDetails[quotationId.toString()] = quotationData;
+                });
+              }
+            }
+          } catch (e) {
+            print('Erreur lors du chargement du devis ${quotationId}: $e');
+          }
+        }
+      }
+    } catch (e) {
+      print('Erreur lors du chargement des détails des devis: $e');
+    }
+  }
+
+  Future<void> _loadPortfolios() async {
+    try {
+      // Endpoint pour récupérer les portfolios d'un professionnel
+      // GET /api/professionals/{professionalId}/portfolios
+      final portfoliosUrl = 'http://10.0.2.2:8000/api/professionals/${widget.professionalId}/portfolios';
+      print('Chargement des portfolios depuis: $portfoliosUrl');
+
+      // Récupérer le token d'authentification depuis les paramètres ou SharedPreferences
+      final token = widget.token ?? await _getTokenFromPrefs();
+
+      final response = await http.get(
+        Uri.parse(portfoliosUrl),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(utf8.decode(response.bodyBytes));
+        final portfoliosData = responseData is Map ? responseData['data'] ?? [] : [];
+
+        print('=== DEBUG PORTFOLIOS ===');
+        print('Données reçues: $portfoliosData');
+        print('Nombre d\'éléments: ${portfoliosData.length}');
+
+        if (portfoliosData.isNotEmpty) {
+          print('Premier élément: ${portfoliosData[0]}');
+          print('Clés disponibles: ${portfoliosData[0].keys.toList()}');
+          print('Valeur image_url: ${portfoliosData[0]['image_url']}');
+          print('Valeur image: ${portfoliosData[0]['image']}');
+          print('Valeur image_path: ${portfoliosData[0]['image_path']}');
+        }
+
+        if (mounted) {
+          setState(() {
+            _portfolios = List<Map<String, dynamic>>.from(portfoliosData);
+          });
+        }
+        print('Portfolios chargés: ${_portfolios.length} éléments');
+      } else if (response.statusCode == 404 || response.statusCode == 500) {
+        // Endpoint non trouvé ou erreur serveur - utiliser une liste vide
+        print('Portfolios non disponibles pour ce professionnel (code: ${response.statusCode})');
+        if (mounted) {
+          setState(() {
+            _portfolios = [];
+          });
+        }
+      } else {
+        print('Erreur lors du chargement des portfolios: ${response.statusCode}');
+        if (mounted) {
+          setState(() {
+            _portfolios = [];
+          });
+        }
+      }
+    } catch (e) {
+      print('Erreur lors du chargement des portfolios: $e');
+      // En cas d'erreur de réseau, utiliser une liste vide
+      if (mounted) {
+        setState(() {
+          _portfolios = [];
+        });
+      }
+    }
+  }
+
   Future<void> _showRatingDialog() async {
     double rating = 0;
     final commentController = TextEditingController();
-    
+
     return showDialog<void>(
       context: context,
       builder: (BuildContext context) {
@@ -367,17 +486,29 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
               style: GoogleFonts.poppins(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: const Color(0xFF4CAF50),
+                color: const Color(0xFFFFCC00),
               ),
             ),
             const SizedBox(height: 12),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey[200]!),
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFFFCC00).withOpacity(0.08),
+                    spreadRadius: 2,
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+                border: Border.all(
+                  color: const Color(0xFFFFCC00).withOpacity(0.1),
+                  width: 1,
+                ),
               ),
               child: Text(
                 _professional!.description!,
@@ -397,53 +528,132 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
             style: GoogleFonts.poppins(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: const Color(0xFF4CAF50),
+              color: const Color(0xFFFFCC00),
             ),
           ),
           const SizedBox(height: 12),
           Container(
-            padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[200]!),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFFFCC00).withOpacity(0.08),
+                  spreadRadius: 2,
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+              border: Border.all(
+                color: const Color(0xFFFFCC00).withOpacity(0.1),
+                width: 1,
+              ),
             ),
             child: Column(
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.location_on, color: Color(0xFF4CAF50), size: 20),
-                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFFFCC00).withOpacity(0.1),
+                      ),
+                      child: const Icon(Icons.location_on, color: Color(0xFFFFCC00), size: 20),
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
-                      child: Text(
-                        _professional?.address != null && _professional!.address!.isNotEmpty
-                            ? _professional!.address!
-                            : 'Adresse non spécifiée',
-                        style: GoogleFonts.poppins(fontSize: 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Localisation',
+                            style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _professional?.address != null && _professional!.address!.isNotEmpty
+                                ? _professional!.address!
+                                : 'Adresse non spécifiée',
+                            style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Row(
                   children: [
-                    const Icon(Icons.place, color: Color(0xFF4CAF50), size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${_professional?.city ?? 'Ville non spécifiée'}, ${_professional?.postalCode ?? ''}',
-                      style: GoogleFonts.poppins(fontSize: 14),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFFFCC00).withOpacity(0.1),
+                      ),
+                      child: const Icon(Icons.place, color: Color(0xFFFFCC00), size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Ville',
+                            style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${_professional?.city ?? 'Ville non spécifiée'}, ${_professional?.postalCode ?? ''}',
+                            style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
                 if (_professional?.radiusKm != null && _professional!.radiusKm! > 0) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   Row(
                     children: [
-                      const Icon(Icons.gps_fixed, color: Color(0xFF4CAF50), size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Rayon d\'intervention: ${_professional!.radiusKm} km',
-                        style: GoogleFonts.poppins(fontSize: 14),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFFFFCC00).withOpacity(0.1),
+                        ),
+                        child: const Icon(Icons.gps_fixed, color: Color(0xFFFFCC00), size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Rayon d\'intervention',
+                              style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${_professional!.radiusKm} km',
+                              style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -452,100 +662,88 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
             ),
           ),
 
-          const SizedBox(height: 24),
-
           // Informations professionnelles détaillées
           Text(
             'Informations professionnelles',
             style: GoogleFonts.poppins(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: const Color(0xFF4CAF50),
+              color: const Color(0xFFFFCC00),
             ),
           ),
           const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[200]!),
-            ),
-            child: Column(
-              children: [
-                _buildDetailRow('Expérience', '${_professional?.experienceYears ?? 0} années'),
-                const SizedBox(height: 12),
-                _buildDetailRow('Tarif horaire', '${_professional?.hourlyRate?.toStringAsFixed(0) ?? '0'} €'),
-                const SizedBox(height: 12),
-                _buildDetailRow('Prix minimum', '${_professional?.minPrice?.toStringAsFixed(0) ?? '0'} €'),
-                const SizedBox(height: 12),
-                _buildDetailRow('Prix maximum', '${_professional?.maxPrice?.toStringAsFixed(0) ?? '0'} €'),
-                const SizedBox(height: 12),
-                _buildDetailRow('Projets terminés', '${_professional?.completedJobs ?? 0}'),
-                const SizedBox(height: 12),
-                _buildDetailRow('Statut', _professional?.isAvailable == true ? 'Disponible' : 'Indisponible',
-                  valueColor: _professional?.isAvailable == true ? Colors.green : Colors.red),
-              ],
-            ),
-          ),
+          _buildInfoGrid(),
 
           const SizedBox(height: 24),
 
-          // Compétences si elles ne sont pas déjà affichées plus haut
-          // Compétences si elles ne sont pas déjà affichées plus haut
-          if (_professional?.skills?.isNotEmpty == true && (_professional?.detailedSkills?.isEmpty ?? true)) ...[
+          // Compétences détaillées
+          if (_professional?.detailedSkills?.isNotEmpty == true) ...[
             Text(
               'Compétences',
               style: GoogleFonts.poppins(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: const Color(0xFF4CAF50),
+                color: const Color(0xFFFFCC00),
               ),
             ),
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
-              runSpacing: 8,
-              children: _professional!.skills.map((skill) {
-                return Chip(
-                  label: Text(skill),
-                  backgroundColor: Colors.blue[50],
-                  labelStyle: GoogleFonts.poppins(fontSize: 12),
+              runSpacing: 12,
+              children: (_professional?.detailedSkills ?? []).map((skill) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _getSkillLevelColor(skill.level).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: _getSkillLevelColor(skill.level),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _getSkillIcon(skill.level),
+                        size: 16,
+                        color: _getSkillLevelColor(skill.level),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        skill.name,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: _getSkillLevelColor(skill.level),
+                        ),
+                      ),
+                      if (skill.experienceYears > 0) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _getSkillLevelColor(skill.level),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${skill.experienceYears} ans',
+                            style: GoogleFonts.poppins(
+                              fontSize: 10,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 );
               }).toList(),
             ),
           ],
         ],
       ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value, {Color? valueColor}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 120,
-          child: Text(
-            '$label:',
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w500,
-              color: Colors.grey[600],
-              fontSize: 14,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              color: valueColor ?? Colors.black87,
-              fontWeight: valueColor != null ? FontWeight.w600 : FontWeight.normal,
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -607,30 +805,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                    color: Colors.grey[200],
-                  ),
-                  child: item['image_url'] != null
-                      ? ClipRRect(
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                          child: CachedNetworkImage(
-                            imageUrl: item['image_url'],
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                            errorWidget: (context, url, error) =>
-                                const Center(
-                                  child: Icon(Icons.broken_image, size: 40, color: Colors.grey),
-                                ),
-                          ),
-                        )
-                      : const Center(
-                          child: Icon(Icons.photo, size: 40, color: Colors.grey),
-                        ),
-                ),
+                child: _buildPortfolioImage(item),
               ),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -721,7 +896,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: const Color(0xFF4CAF50),
+                          color: const Color(0xFFFFCC00),
                         ),
                       ),
                     ],
@@ -743,7 +918,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                 ),
                 onPressed: _showRatingDialog,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4CAF50),
+                  backgroundColor: const Color(0xFFFFCC00),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   shape: RoundedRectangleBorder(
@@ -758,7 +933,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
         // Liste des avis (prend tout l'espace restant)
         Expanded(
           child: _reviews.isEmpty
-              ? SingleChildScrollView( // ✅ Défilement pour l'état vide
+              ? SingleChildScrollView( // Défilement pour l'état vide
                   child: Container(
                     padding: const EdgeInsets.all(32.0),
                     child: Column(
@@ -797,30 +972,53 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                   itemCount: _reviews.length,
                   itemBuilder: (context, index) {
                     final review = _reviews[index];
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                    final quotationId = review['quotation_id'];
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFFFCC00).withOpacity(0.08),
+                            spreadRadius: 1,
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                        border: Border.all(
+                          color: const Color(0xFFFFCC00).withOpacity(0.1),
+                          width: 1,
+                        ),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(16.0),
+                        padding: const EdgeInsets.all(20.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
                               children: [
-                                CircleAvatar(
-                                  backgroundColor: const Color(0xFF4CAF50).withOpacity(0.1),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: const Color(0xFFFFCC00).withOpacity(0.1),
+                                    border: Border.all(
+                                      color: const Color(0xFFFFCC00).withOpacity(0.3),
+                                      width: 2,
+                                    ),
+                                  ),
                                   child: Text(
                                     review['user_name']?[0].toUpperCase() ?? '?',
                                     style: GoogleFonts.poppins(
-                                      color: const Color(0xFF4CAF50),
+                                      color: const Color(0xFFFFCC00),
                                       fontWeight: FontWeight.w600,
+                                      fontSize: 16,
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 12),
+                                const SizedBox(width: 16),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -829,10 +1027,11 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                                         review['user_name'] ?? 'Anonyme',
                                         style: GoogleFonts.poppins(
                                           fontWeight: FontWeight.w600,
-                                          fontSize: 14,
+                                          fontSize: 16,
+                                          color: Colors.black87,
                                         ),
                                       ),
-                                      const SizedBox(height: 2),
+                                      const SizedBox(height: 4),
                                       RatingBarIndicator(
                                         rating: (review['rating'] as num?)?.toDouble() ?? 0,
                                         itemBuilder: (context, _) => const Icon(
@@ -846,29 +1045,58 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                                     ],
                                   ),
                                 ),
-                                Text(
-                                  _formatDate(review['created_at'] ?? ''),
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.grey[600],
-                                    fontSize: 12,
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    _formatDate(review['created_at'] ?? ''),
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.grey[600],
+                                      fontSize: 12,
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
                             if (review['comment'] != null && review['comment'].toString().isNotEmpty) ...[
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 16),
                               Container(
                                 width: double.infinity,
-                                padding: const EdgeInsets.all(12),
+                                padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
                                   color: Colors.grey[50],
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.grey[200]!),
                                 ),
                                 child: Text(
                                   review['comment'].toString(),
                                   style: GoogleFonts.poppins(
                                     fontSize: 14,
                                     height: 1.4,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            // Bouton pour voir le devis associé si disponible
+                            if (quotationId != null) ...[
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  icon: const Icon(Icons.description, size: 16),
+                                  label: const Text('Voir le devis associé'),
+                                  onPressed: () => _navigateToQuotationDetails(quotationId.toString()),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF4CAF50),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -885,130 +1113,129 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
   }
 
   Widget _buildInfoGrid() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: [
-          // Première ligne
-          Row(
-            children: [
-              Expanded(
-                child: _buildInfoItem(
-                  icon: Icons.work,
-                  title: 'Expérience',
-                  value: '${_professional?.experienceYears ?? 0} ans',
-                ),
-              ),
-              Expanded(
-                child: _buildInfoItem(
-                  icon: Icons.euro,
-                  title: 'Tarif horaire',
-                  value: '${_professional?.hourlyRate?.toStringAsFixed(0) ?? '0'} €',
-                ),
-              ),
-            ],
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 12,
+      crossAxisSpacing: 12,
+      childAspectRatio: 1.1,
+      children: [
+        _buildInfoCard(
+          icon: Icons.work,
+          title: 'Expérience',
+          value: '${_professional?.experienceYears ?? 0} ans',
+          color: const Color(0xFFFFCC00),
+        ),
+        _buildInfoCard(
+          icon: Icons.euro,
+          title: 'Tarif horaire',
+          value: '${_professional?.hourlyRate?.toStringAsFixed(0) ?? '0'} €',
+          color: const Color(0xFFFFCC00),
+        ),
+        _buildInfoCard(
+          icon: Icons.location_on,
+          title: 'Localisation',
+          value: _professional?.city ?? 'Non spécifiée',
+          color: const Color(0xFFFFCC00),
+        ),
+        _buildInfoCard(
+          icon: Icons.check_circle,
+          title: 'Projets terminés',
+          value: '${_professional?.completedJobs ?? 0}',
+          color: const Color(0xFFFFCC00),
+        ),
+        if (_professional?.minPrice != null) ...[
+          _buildInfoCard(
+            icon: Icons.attach_money,
+            title: 'Prix minimum',
+            value: '${_professional?.minPrice?.toStringAsFixed(0) ?? '0'} €',
+            color: const Color(0xFFFFCC00),
           ),
-
-          const SizedBox(height: 16),
-
-          // Deuxième ligne
-          Row(
-            children: [
-              Expanded(
-                child: _buildInfoItem(
-                  icon: Icons.location_on,
-                  title: 'Localisation',
-                  value: _professional?.city ?? 'Non spécifiée',
-                ),
-              ),
-              Expanded(
-                child: _buildInfoItem(
-                  icon: Icons.check_circle,
-                  title: 'Projets terminés',
-                  value: '${_professional?.completedJobs ?? 0}',
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          // Troisième ligne
-          Row(
-            children: [
-              Expanded(
-                child: _buildInfoItem(
-                  icon: Icons.attach_money,
-                  title: 'Prix min',
-                  value: '${_professional?.minPrice?.toStringAsFixed(0) ?? '0'} €',
-                ),
-              ),
-              Expanded(
-                child: _buildInfoItem(
-                  icon: Icons.trending_up,
-                  title: 'Prix max',
-                  value: '${_professional?.maxPrice?.toStringAsFixed(0) ?? '0'} €',
-                ),
-              ),
-            ],
-          ),
-
-          if (_professional?.radiusKm != null && _professional!.radiusKm! > 0) ...[
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildInfoItem(
-                    icon: Icons.gps_fixed,
-                    title: 'Rayon d\'intervention',
-                    value: '${_professional!.radiusKm} km',
-                  ),
-                ),
-              ],
-            ),
-          ],
         ],
-      ),
+        if (_professional?.maxPrice != null) ...[
+          _buildInfoCard(
+            icon: Icons.trending_up,
+            title: 'Prix maximum',
+            value: '${_professional?.maxPrice?.toStringAsFixed(0) ?? '0'} €',
+            color: const Color(0xFFFFCC00),
+          ),
+        ],
+        if (_professional?.radiusKm != null && _professional!.radiusKm! > 0) ...[
+          _buildInfoCard(
+            icon: Icons.gps_fixed,
+            title: 'Rayon d\'intervention',
+            value: '${_professional!.radiusKm} km',
+            color: const Color(0xFFFFCC00),
+          ),
+        ],
+      ],
     );
   }
 
-  Widget _buildInfoItem({
+  Widget _buildInfoCard({
     required IconData icon,
     required String title,
     required String value,
+    required Color color,
   }) {
-    return Column(
-      children: [
-        Icon(
-          icon,
-          size: 20,
-          color: const Color(0xFF4CAF50),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          title,
-          style: GoogleFonts.poppins(
-            fontSize: 12,
-            color: Colors.grey[600],
-            fontWeight: FontWeight.w500,
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
-          textAlign: TextAlign.center,
+        ],
+        border: Border.all(
+          color: color.withOpacity(0.2),
+          width: 1,
         ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: Colors.black87,
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withOpacity(0.1),
+            ),
+            child: Icon(
+              icon,
+              size: 24,
+              color: color,
+            ),
           ),
-          textAlign: TextAlign.center,
-        ),
-      ],
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
     );
   }
 
@@ -1050,9 +1277,6 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
 
   @override
   Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.of(context).size.height;
-    final headerHeight = screenHeight * 0.6; // 60% de la hauteur d'écran pour l'en-tête
-
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.white,
@@ -1100,22 +1324,24 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                 children: [
                   // En-tête avec photo et informations principales (hauteur contrainte)
                   Container(
-                    height: headerHeight,
+                    height: 400,
                     child: SingleChildScrollView(
                       child: _buildHeaderSection(),
                     ),
                   ),
 
-                  // Barre d'onglets
+                  // Barre d'onglets - directement sous la photo
                   Container(
                     decoration: BoxDecoration(
-                      color: Theme.of(context).scaffoldBackgroundColor,
-                      border: Border(
-                        bottom: BorderSide(
-                          color: Colors.grey[300]!,
-                          width: 1,
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.1),
+                          spreadRadius: 1,
+                          blurRadius: 3,
+                          offset: const Offset(0, 2),
                         ),
-                      ),
+                      ],
                     ),
                     child: TabBar(
                       controller: _tabController,
@@ -1128,9 +1354,9 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                       onTap: (index) {
                         // L'index est géré automatiquement par le TabController
                       },
-                      labelColor: Theme.of(context).primaryColor,
+                      labelColor: const Color(0xFFFFCC00),
                       unselectedLabelColor: Colors.grey,
-                      indicatorColor: Theme.of(context).primaryColor,
+                      indicatorColor: const Color(0xFFFFCC00),
                       indicatorWeight: 3,
                     ),
                   ),
@@ -1157,10 +1383,12 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
               professionalId: widget.professionalId,
               professionalName: _professional?.displayName ?? 'Professionnel',
               professionalJob: _professional?.jobTitle ?? _professional?.profession ?? 'Service',
+              token: widget.token,
+              userData: widget.userData,
             ),
           ),
         ),
-        backgroundColor: const Color(0xFF4CAF50),
+        backgroundColor: const Color(0xFFFFCC00),
         icon: const Icon(Icons.request_quote),
         label: const Text('Demander un devis'),
       ),
@@ -1169,19 +1397,19 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
 
   Widget _buildHeaderSection() {
     return Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            const Color(0xFF4CAF50).withOpacity(0.1),
+            Color(0xFFFFCC00),
             Colors.white,
           ],
         ),
       ),
       child: Column(
         children: [
-          // Photo et statut
+          // Photo et statut uniquement - les infos détaillées vont dans les onglets
           Stack(
             children: [
               Container(
@@ -1192,14 +1420,14 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                     bottomRight: Radius.circular(20),
                   ),
                 ),
-                child: _professional?.photoUrl != null
+                child: _professional?.fullAvatarUrl != null
                     ? ClipRRect(
                         borderRadius: const BorderRadius.only(
                           bottomLeft: Radius.circular(20),
                           bottomRight: Radius.circular(20),
                         ),
                         child: CachedNetworkImage(
-                          imageUrl: _professional!.photoUrl!,
+                          imageUrl: _professional!.fullAvatarUrl!,
                           fit: BoxFit.cover,
                           placeholder: (context, url) => Container(
                             color: Colors.grey[300],
@@ -1253,30 +1481,69 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
             ],
           ),
 
-          // Informations principales
+          // Informations essentielles juste sous la photo (nom, métier, note)
           Container(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Nom et métier
-                Text(
-                  _professional?.displayName ?? '',
-                  style: GoogleFonts.poppins(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _professional?.jobTitle?.isNotEmpty == true
-                      ? (_professional?.jobTitle ?? _professional?.profession ?? 'Service non spécifié')
-                      : (_professional?.profession ?? 'Service non spécifié'),
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    color: Colors.grey[600],
-                  ),
+                // Nom et métier avec badge professionnel
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _professional?.displayName ?? '',
+                            style: GoogleFonts.poppins(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFCC00).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(15),
+                              border: Border.all(
+                                color: const Color(0xFFFFCC00),
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              _professional?.jobTitle?.isNotEmpty == true
+                                  ? (_professional?.jobTitle ?? _professional?.profession ?? 'Service non spécifié')
+                                  : (_professional?.profession ?? 'Service non spécifié'),
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                color: const Color(0xFFFFCC00),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFFFCC00).withOpacity(0.1),
+                        border: Border.all(
+                          color: const Color(0xFFFFCC00),
+                          width: 2,
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.verified,
+                        color: const Color(0xFFFFCC00),
+                        size: 24,
+                      ),
+                    ),
+                  ],
                 ),
 
                 const SizedBox(height: 16),
@@ -1284,104 +1551,44 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                 // Note et informations principales
                 Row(
                   children: [
-                    Row(
-                      children: [
-                        RatingBarIndicator(
-                          rating: _professional?.rating ?? 0,
-                          itemBuilder: (context, _) => const Icon(
-                            Icons.star,
-                            color: Colors.amber,
-                          ),
-                          itemCount: 5,
-                          itemSize: 20.0,
-                          direction: Axis.horizontal,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${(_professional?.rating ?? 0).toStringAsFixed(1)} (${_professional?.reviewCount ?? 0} avis)',
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 16),
-
-                // Informations détaillées en grille
-                _buildInfoGrid(),
-
-                const SizedBox(height: 16),
-
-                // Compétences détaillées
-                if (_professional?.detailedSkills?.isNotEmpty == true) ...[
-                  Text(
-                    'Compétences',
-                    style: GoogleFonts.poppins(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF4CAF50),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 12,
-                    children: (_professional?.detailedSkills ?? []).map((skill) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: _getSkillLevelColor(skill.level).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: _getSkillLevelColor(skill.level),
-                            width: 1,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              _getSkillIcon(skill.level),
-                              size: 16,
-                              color: _getSkillLevelColor(skill.level),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              skill.name,
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: _getSkillLevelColor(skill.level),
-                              ),
-                            ),
-                            if (skill.experienceYears > 0) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: _getSkillLevelColor(skill.level),
-                                  borderRadius: BorderRadius.circular(10),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              RatingBarIndicator(
+                                rating: _professional?.rating ?? 0,
+                                itemBuilder: (context, _) => const Icon(
+                                  Icons.star,
+                                  color: Colors.amber,
                                 ),
-                                child: Text(
-                                  '${skill.experienceYears} ans',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 10,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                itemCount: 5,
+                                itemSize: 20.0,
+                                direction: Axis.horizontal,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${(_professional?.rating ?? 0).toStringAsFixed(1)}/5',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFFFFCC00),
                                 ),
                               ),
                             ],
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
+                          ),
+                          Text(
+                            '${_professional?.reviewCount ?? 0} avis clients',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -1390,8 +1597,119 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
     );
   }
 
+  String _getImageUrl(Map<String, dynamic> item) {
+    // Essaie différentes clés possibles pour l'image
+    String? imageUrl = item['image_url'] ?? item['image'] ?? item['image_path'];
+
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      // Si l'URL ne commence pas par http, la compléter
+      if (!imageUrl.startsWith('http')) {
+        return 'http://10.0.2.2:8000$imageUrl';
+      }
+      return imageUrl;
+    }
+    return '';
+  }
+
+  Widget _buildPortfolioImage(Map<String, dynamic> item) {
+    final imageUrl = _getImageUrl(item);
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+        color: Colors.grey[200],
+      ),
+      child: imageUrl.isNotEmpty
+          ? ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              child: CachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => const Center(
+                  child: CircularProgressIndicator(),
+                ),
+                errorWidget: (context, url, error) {
+                  print('Erreur de chargement image: $url - $error');
+                  return const Center(
+                    child: Icon(Icons.broken_image, size: 40, color: Colors.grey),
+                  );
+                },
+              ),
+            )
+          : const Center(
+              child: Icon(Icons.photo, size: 40, color: Colors.grey),
+            ),
+    );
+  }
+
   Future<String?> _getTokenFromPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('access_token');
+  }
+
+  void _navigateToQuotationDetails(String quotationId) {
+    // Naviguer vers les détails du devis associé à cet avis
+    // Nous devons d'abord récupérer les informations du devis depuis l'API
+    _loadQuotationDetails(quotationId);
+  }
+
+  Future<void> _loadQuotationDetails(String quotationId) async {
+    try {
+      final token = widget.token ?? await _getTokenFromPrefs();
+
+      if (token == null || token.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Authentification requise pour voir les détails du devis.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final response = await http.get(
+        Uri.parse('http://10.0.2.2:8000/api/quotations/$quotationId'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(utf8.decode(response.bodyBytes));
+        final quotationData = responseData is Map ? responseData['data'] : null;
+
+        if (quotationData != null) {
+          // Naviguer vers l'écran des détails du devis avec les données récupérées
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => unified_screen.UnifiedQuotationDetailScreen(
+                quotationId: quotationId,
+                quotation: quotationData,
+                token: token,
+                context: unified_screen.QuotationContext.client,
+              ),
+            ),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Impossible de charger les détails du devis.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Erreur lors du chargement des détails du devis: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Erreur lors du chargement du devis.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }

@@ -76,17 +76,53 @@ class Professional {
     return fullName;
   }
 
-  // Getter pour photoUrl depuis les données JSON brutes si disponibles
-  String? get photoUrl {
+  // Getter pour l'URL complète de l'avatar avec fallback sur l'URL Laravel
+  String? get fullAvatarUrl {
+    if (avatarUrl == null || avatarUrl!.isEmpty) return null;
+
+    print('=== DEBUG AVATAR URL ===');
+    print('avatarUrl brut: $avatarUrl');
+
+    // Si l'URL commence par http, c'est déjà une URL complète
+    if (avatarUrl!.startsWith('http://') || avatarUrl!.startsWith('https://')) {
+      print('URL complète détectée: $avatarUrl');
+      return avatarUrl;
+    }
+
+    // Si c'est un chemin relatif, construire l'URL complète Laravel
+    if (avatarUrl!.startsWith('/storage/') || avatarUrl!.startsWith('storage/')) {
+      // Éviter le double slash en supprimant le slash initial si nécessaire
+      final cleanPath = avatarUrl!.startsWith('/') ? avatarUrl!.substring(1) : avatarUrl!;
+      final fullUrl = 'http://10.0.2.2:8000/$cleanPath';
+      print('Chemin relatif converti en URL complète: $fullUrl');
+      return fullUrl;
+    }
+
+    // Si c'est juste un nom de fichier ou un placeholder, retourner null
+    if (avatarUrl!.contains('via.placeholder.com') || avatarUrl!.contains('placeholder')) {
+      print('Placeholder détecté, pas d\'affichage: $avatarUrl');
+      return null;
+    }
+
+    // Par défaut, retourner l'URL telle quelle
+    print('URL par défaut: $avatarUrl');
     return avatarUrl;
   }
 
+  // Getter pour photoUrl depuis les données JSON brutes si disponibles (maintenu pour compatibilité)
+  String? get photoUrl {
+    return fullAvatarUrl;
+  }
+
   factory Professional.fromJson(Map<String, dynamic> json) {
-    return Professional(
+    final professional = Professional(
       id: json['id']?.toString() ?? '',
       firstName: json['first_name'] ?? json['user']?['first_name'] ?? '',
       lastName: json['last_name'] ?? json['user']?['last_name'] ?? '',
-      avatarUrl: json['avatar_url'] ?? json['user']?['profile_photo_url'] ?? json['avatar'],
+      avatarUrl: json['avatar_url'] ??
+                 json['user']?['profile_photo_url'] ??
+                 json['avatar'] ??
+                 _extractProfilePhotoUrl(json['profile_photo']),
       profession: json['profession'] ?? json['job_title'] ?? 'Professionnel',
       rating: (json['rating'] ?? 0).toDouble(),
       reviewCount: json['review_count'] ?? json['reviews']?.length ?? 0,
@@ -119,6 +155,44 @@ class Professional {
               ProfessionalSkill.fromJson(skill as Map<String, dynamic>)).toList()
           : [],
     );
+
+    // Debug: Afficher l'URL finale de l'avatar pour chaque professionnel créé
+    print('=== DEBUG PROFESSIONNEL CREE ===');
+    print('ID: ${professional.id}');
+    print('Nom: ${professional.displayName}');
+    print('avatarUrl extrait: ${professional.avatarUrl}');
+    print('fullAvatarUrl: ${professional.fullAvatarUrl}');
+
+    return professional;
+  }
+
+  // Méthode helper pour extraire l'URL de la photo de profil depuis la nouvelle structure
+  static String? _extractProfilePhotoUrl(dynamic profilePhotoData) {
+    if (profilePhotoData == null) {
+      print('=== DEBUG PROFILE PHOTO ===');
+      print('profilePhotoData est null');
+      return null;
+    }
+
+    print('=== DEBUG PROFILE PHOTO ===');
+    print('profilePhotoData type: ${profilePhotoData.runtimeType}');
+    print('profilePhotoData value: $profilePhotoData');
+
+    if (profilePhotoData is Map<String, dynamic>) {
+      // Nouvelle structure avec path, url, type
+      final url = profilePhotoData['url']?.toString();
+      print('Structure Map détectée, URL extraite: $url');
+      return url;
+    }
+
+    if (profilePhotoData is String) {
+      // Ancienne structure avec juste l'URL
+      print('Structure String détectée: $profilePhotoData');
+      return profilePhotoData;
+    }
+
+    print('Type non reconnu pour profilePhotoData');
+    return null;
   }
 
   Map<String, dynamic> toJson() {

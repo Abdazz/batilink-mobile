@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_fonts/google_fonts.dart';
+import 'portfolio_management_screen.dart';
+import 'business_hours_edit_screen.dart';
+import 'professional_profile_edit_screen.dart';
 
 class ProfessionalSettingsScreen extends StatefulWidget {
   final String token;
@@ -18,6 +21,68 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
   bool _isLoading = true;
   String _error = '';
 
+  /// Transforme les données du profil pour inclure l'URL complète de la photo de profil
+  Map<String, dynamic> _transformProfileData(Map<String, dynamic> profileData) {
+    print('=== DEBUG TRANSFORM PROFILE DATA ===');
+    print('Données reçues dans _transformProfileData: $profileData');
+
+    // Construire l'URL complète de la photo de profil
+    String? fullPhotoUrl;
+
+    // Nouvelle structure: profile_photo est un objet avec url
+    if (profileData['profile_photo'] != null && profileData['profile_photo'] is Map) {
+      final profilePhoto = profileData['profile_photo'] as Map<String, dynamic>;
+      print('=== DEBUG PROFILE PHOTO ===');
+      print('profile_photo reçu: $profilePhoto');
+      print('URL reçue: ${profilePhoto['url']}');
+      print('Path reçu: ${profilePhoto['path']}');
+      print('Type reçu: ${profilePhoto['type']}');
+
+      if (profilePhoto['url'] != null && profilePhoto['url'].toString().isNotEmpty) {
+        final url = profilePhoto['url'].toString();
+        print('URL à traiter: $url');
+
+        // Vérifier si c'est une URL complète
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          print('URL complète détectée');
+          // URL complète - vérifier que ce n'est pas un placeholder
+          if (url != 'https://via.placeholder.com/150' && !url.contains('placeholder')) {
+            print('URL valide trouvée: $url');
+            fullPhotoUrl = url;
+          } else {
+            print('URL de placeholder ignorée');
+          }
+        } else {
+          print('URL relative détectée, construction de l\'URL complète');
+          // URL relative - construire l'URL complète
+          fullPhotoUrl = 'http://10.0.2.2:8000$url';
+          print('URL construite: $fullPhotoUrl');
+        }
+      } else {
+        print('Aucune URL trouvée dans profile_photo');
+      }
+    }
+
+    // Fallback: Ancienne structure avec profile_photo_path
+    if (fullPhotoUrl == null && profileData['profile_photo_path'] != null && profileData['profile_photo_path'].toString().isNotEmpty) {
+      fullPhotoUrl = 'http://10.0.2.2:8000${profileData['profile_photo_path']}';
+    }
+
+    // Créer une copie des données avec l'URL complète
+    Map<String, dynamic> transformedData = Map<String, dynamic>.from(profileData);
+    transformedData['profile_photo_url'] = fullPhotoUrl;
+
+    // Debug spécifique pour business_hours
+    print('business_hours AVANT transformation: ${transformedData['business_hours']}');
+    print('Type business_hours AVANT: ${transformedData['business_hours']?.runtimeType}');
+
+    print('business_hours APRES transformation: ${transformedData['business_hours']}');
+    print('Type business_hours APRES: ${transformedData['business_hours']?.runtimeType}');
+    print('====================================');
+
+    return transformedData;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -32,51 +97,159 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
       });
 
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token') ?? widget.token;
+      final token = prefs.getString('access_token') ?? widget.token;
+
+      print('=== DEBUG - Récupération du profil professionnel ===');
+      print('Token: ${token.substring(0, 20)}...');
+      print('URL: http://10.0.2.2:8000/api/professional/profile/me');
 
       final response = await http.get(
-        Uri.parse('http://10.0.2.2:8000/api/professional/profile'),
+        Uri.parse('http://10.0.2.2:8000/api/professional/profile/me'),
         headers: {
           'Authorization': 'Bearer $token',
           'Accept': 'application/json',
         },
       );
 
+      print('Réponse reçue - Status: ${response.statusCode}');
+      print('Réponse reçue - Body: ${response.body}');
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
 
+        print('Données décodées: $data');
+
         if (data['success'] == true && data['data'] != null) {
-          // La structure contient "data" qui contient un tableau de profils
           final profileData = data['data'];
 
-          if (profileData['data'] != null && (profileData['data'] as List).isNotEmpty) {
-            // IMPORTANT: Vérifier que nous récupérons le profil de l'utilisateur connecté
-            // Pour l'instant, prendre le premier profil (mais cela devrait être corrigé côté API)
-            final profile = profileData['data'][0];
+          print('Structure des données du profil: ${profileData.runtimeType}');
 
-            // Vérification de sécurité : s'assurer que c'est bien notre profil
-            // En production, l'API devrait retourner uniquement le profil de l'utilisateur connecté
+          // NOUVELLE STRUCTURE: L'API retourne un tableau dans data.data
+          if (profileData is Map && profileData['data'] != null && (profileData['data'] as List).isNotEmpty) {
+            final profiles = profileData['data'] as List;
+
+            print('Nombre de profils reçus: ${profiles.length}');
+
+            // Chercher le profil le plus récent ou le profil avec les données complètes
+            Map<String, dynamic>? selectedProfile;
+
+            // D'abord chercher par ID spécifique (si on connaît l'ID du profil créé)
+            final prefs = await SharedPreferences.getInstance();
+            final lastProfileId = prefs.getString('last_profile_id');
+
+            if (lastProfileId != null && lastProfileId.isNotEmpty) {
+              for (var profile in profiles) {
+                if (profile is Map<String, dynamic> && profile['id'] == lastProfileId) {
+                  selectedProfile = profile;
+                  break;
+                }
+              }
+            }
+
+            // Sinon, chercher le profil avec les données les plus récentes (pas par défaut)
+            if (selectedProfile == null) {
+              for (var profile in profiles) {
+                if (profile is Map<String, dynamic>) {
+                  final companyName = profile['company_name'] ?? '';
+                  if (companyName != 'Entreprise par défaut' && companyName.isNotEmpty) {
+                    selectedProfile = profile;
+                    break;
+                  }
+                }
+              }
+            }
+
+            // Si toujours pas trouvé, chercher par mots-clés dans la description ou le nom
+            if (selectedProfile == null) {
+              for (var profile in profiles) {
+                if (profile is Map<String, dynamic>) {
+                  final companyName = (profile['company_name'] ?? '').toString().toLowerCase();
+                  final jobTitle = (profile['job_title'] ?? '').toString().toLowerCase();
+
+                  // Éviter les profils par défaut
+                  if (!companyName.contains('par défaut') && !jobTitle.contains('professionnel')) {
+                    selectedProfile = profile;
+                    break;
+                  }
+                }
+              }
+            }
+
+            // Dernière option: prendre le premier profil valide
+            if (selectedProfile == null) {
+              for (var profile in profiles) {
+                if (profile is Map<String, dynamic> && profile['id'] != null) {
+                  selectedProfile = profile;
+                  break;
+                }
+              }
+            }
+
+            if (selectedProfile != null) {
+              print('ID du profil sélectionné: ${selectedProfile['id']}');
+              print('Nom de l\'entreprise sélectionnée: ${selectedProfile['company_name']}');
+
+              // Debug spécifique pour business_hours
+              print('=== DEBUG BUSINESS HOURS ===');
+              print('business_hours dans profil brut: ${selectedProfile['business_hours']}');
+              print('Type business_hours: ${selectedProfile['business_hours']?.runtimeType}');
+
+              setState(() {
+                _profile = _transformProfileData(Map<String, dynamic>.from(selectedProfile as Map<dynamic, dynamic>));
+              });
+
+              // Debug: Vérifier les horaires reçus après setState
+              print('Horaires reçus après setState: ${_profile['business_hours']}');
+              print('Type des horaires après setState: ${_profile['business_hours']?.runtimeType}');
+              print('============================');
+            } else {
+              print('Aucun profil valide trouvé dans le tableau');
+              setState(() {
+                _error = 'Aucun profil professionnel valide trouvé';
+              });
+            }
+          }
+          // ANCIENNE STRUCTURE: L'API retourne directement l'objet profil dans 'data'
+          else if (profileData is Map) {
+            final profile = profileData;
+
             print('ID du profil récupéré: ${profile['id']}');
+            print('Nom de l\'entreprise: ${profile['company_name']}');
 
             setState(() {
-              _profile = Map<String, dynamic>.from(profile);
+              _profile = _transformProfileData(Map<String, dynamic>.from(profile));
             });
+
+            // Debug: Vérifier les horaires reçus
+            print('=== DEBUG PROFIL RÉCEPTION ===');
+            print('Horaires reçus: ${_profile['business_hours']}');
+            print('Type des horaires: ${_profile['business_hours'].runtimeType}');
+            print('============================');
           } else {
+            print('Structure inattendue des données du profil');
             setState(() {
               _error = 'Aucun profil professionnel trouvé pour votre compte';
             });
           }
         } else {
+          print('Réponse API invalide: success=false ou data=null');
           setState(() {
             _error = 'Format de réponse inattendu de l\'API';
           });
         }
+      } else if (response.statusCode == 404) {
+        print('Profil professionnel non trouvé (404)');
+        setState(() {
+          _error = 'Profil professionnel non trouvé. Veuillez compléter votre profil.';
+        });
       } else {
+        print('Erreur serveur: ${response.statusCode}');
         setState(() {
           _error = 'Erreur serveur: ${response.statusCode} - ${response.body}';
         });
       }
     } catch (e) {
+      print('Exception lors de la récupération du profil: $e');
       setState(() {
         _error = 'Erreur de connexion: $e';
       });
@@ -138,19 +311,35 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loadProfessionalProfile,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4CAF50),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            if (_error.contains('non trouvé') || _error.contains('Aucun profil'))
+              ElevatedButton.icon(
+                onPressed: () {
+                  // Naviguer vers l'écran de complétion du profil
+                  Navigator.pushNamed(context, '/professional-complete-profile');
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('Compléter mon profil'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4CAF50),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
-              child: Text(
-                'Réessayer',
-                style: GoogleFonts.poppins(color: Colors.white),
+            if (!_error.contains('non trouvé') && !_error.contains('Aucun profil'))
+              ElevatedButton(
+                onPressed: _loadProfessionalProfile,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4CAF50),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(
+                  'Réessayer',
+                  style: GoogleFonts.poppins(color: Colors.white),
+                ),
               ),
-            ),
           ],
         ),
       );
@@ -175,6 +364,40 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
             _buildInfoRow(Icons.verified, 'Statut', _profile['is_available'] == true ? 'Disponible' : 'Indisponible'),
           ]),
 
+          const SizedBox(height: 16),
+
+          // Bouton Modifier le profil
+          Container(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProfessionalProfileEditScreen(
+                      token: widget.token,
+                      currentProfile: _profile,
+                    ),
+                  ),
+                );
+                if (result == true) {
+                  // Recharger le profil si les modifications ont été sauvegardées
+                  await _loadProfessionalProfile();
+                }
+              },
+              icon: const Icon(Icons.edit, size: 20),
+              label: const Text('Modifier le profil'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4CAF50),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+
           const SizedBox(height: 24),
 
           // Tarification
@@ -198,6 +421,16 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
 
           // Compétences
           _buildSkillsSection(),
+
+          const SizedBox(height: 24),
+
+          // Horaires de disponibilité
+          _buildBusinessHoursSection(),
+
+          const SizedBox(height: 24),
+
+          // Documents professionnels
+          _buildDocumentsSection(),
 
           const SizedBox(height: 24),
 
@@ -251,11 +484,26 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
                 width: 3,
               ),
             ),
-            child: const Icon(
-              Icons.business,
-              color: Color(0xFF4CAF50),
-              size: 40,
-            ),
+            child: _profile['profile_photo_url'] != null && _profile['profile_photo_url'].toString().isNotEmpty
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(37),
+                    child: Image.network(
+                      _profile['profile_photo_url'],
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(
+                          Icons.business,
+                          color: Color(0xFF4CAF50),
+                          size: 40,
+                        );
+                      },
+                    ),
+                  )
+                : const Icon(
+                    Icons.business,
+                    color: Color(0xFF4CAF50),
+                    size: 40,
+                  ),
           ),
           const SizedBox(width: 20),
           Expanded(
@@ -383,7 +631,18 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
   }
 
   Widget _buildSkillsSection() {
-    final skills = _profile['skills'] as List<dynamic>? ?? [];
+    // Gérer les compétences qui peuvent être dans différents formats
+    final skillsData = _profile['skills'];
+    List<dynamic> skills = [];
+
+    if (skillsData is List) {
+      skills = skillsData;
+    } else if (skillsData != null) {
+      print('Format inattendu pour skills: ${skillsData.runtimeType}');
+      skills = [];
+    } else {
+      skills = [];
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -416,13 +675,25 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
             spacing: 12,
             runSpacing: 12,
             children: skills.map<Widget>((skill) {
+              // Gérer les différents formats de compétence
+              String skillName = 'Compétence';
+              String skillLevel = 'beginner';
+
+              if (skill is Map<String, dynamic>) {
+                skillName = skill['name'] ?? 'Compétence';
+                skillLevel = skill['level'] ?? 'beginner';
+              } else if (skill is Map) {
+                skillName = skill['name']?.toString() ?? 'Compétence';
+                skillLevel = skill['level']?.toString() ?? 'beginner';
+              }
+
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: _getSkillLevelColor(skill['level'] ?? 'beginner').withOpacity(0.1),
+                  color: _getSkillLevelColor(skillLevel).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: _getSkillLevelColor(skill['level'] ?? 'beginner'),
+                    color: _getSkillLevelColor(skillLevel),
                     width: 1,
                   ),
                 ),
@@ -430,22 +701,22 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      _getSkillIcon(skill['level'] ?? 'beginner'),
+                      _getSkillIcon(skillLevel),
                       size: 16,
-                      color: _getSkillLevelColor(skill['level'] ?? 'beginner'),
+                      color: _getSkillLevelColor(skillLevel),
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      skill['name'] ?? 'Compétence',
+                      skillName,
                       style: GoogleFonts.poppins(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
-                        color: _getSkillLevelColor(skill['level'] ?? 'beginner'),
+                        color: _getSkillLevelColor(skillLevel),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      '${skill['experience_years'] ?? 0} ans',
+                      _getSkillLevelDisplayName(skillLevel),
                       style: GoogleFonts.poppins(
                         fontSize: 12,
                         color: Colors.grey[600],
@@ -460,14 +731,214 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
     );
   }
 
-  Widget _buildPortfolioSection() {
-    final portfolios = _profile['portfolios'] as List<dynamic>? ?? [];
+  Widget _buildBusinessHoursSection() {
+    final businessHours = _profile['business_hours'];
+
+    print('=== DEBUG BUSINESS HOURS SECTION ===');
+    print('businessHours dans _profile: $businessHours');
+    print('businessHours est null: ${businessHours == null}');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Horaires de disponibilité',
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => BusinessHoursEditScreen(
+                      token: widget.token,
+                      currentHours: _profile['business_hours'],
+                    ),
+                  ),
+                );
+                if (result == true) {
+                  // Recharger le profil si les horaires ont été mis à jour
+                  print('Rafraîchissement du profil après modification des horaires');
+                  await _loadProfessionalProfile();
+                }
+              },
+              icon: const Icon(Icons.edit, size: 16),
+              label: const Text('Modifier'),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF4CAF50),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (businessHours == null)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.orange[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.orange[200]!),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.warning, size: 48, color: Colors.orange[400]),
+                const SizedBox(height: 16),
+                Text(
+                  'Horaires non définis',
+                  style: GoogleFonts.poppins(
+                    color: Colors.orange[700],
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Vos horaires de disponibilité n\'ont pas été correctement sauvegardés. Utilisez le bouton "Modifier" pour les définir.',
+                  style: GoogleFonts.poppins(
+                    color: Colors.orange[600],
+                    fontSize: 14,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => BusinessHoursEditScreen(
+                          token: widget.token,
+                          currentHours: _profile['business_hours'],
+                        ),
+                      ),
+                    );
+                    if (result == true) {
+                      await _loadProfessionalProfile();
+                    }
+                  },
+                  icon: const Icon(Icons.schedule),
+                  label: const Text('Définir mes horaires'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4CAF50),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          _buildBusinessHoursList(businessHours),
+      ],
+    );
+  }
+
+  Widget _buildBusinessHoursList(dynamic businessHours) {
+    print('=== DEBUG AFFICHAGE HORAIRES ===');
+    print('businessHours reçu dans _buildBusinessHoursList: $businessHours');
+    print('Type dans _buildBusinessHoursList: ${businessHours?.runtimeType}');
+    print('businessHours est null: ${businessHours == null}');
+    print('businessHours est vide: ${businessHours?.toString().isEmpty ?? true}');
+
+    Map<String, dynamic> hours;
+
+    try {
+      if (businessHours is String && businessHours.isNotEmpty) {
+        print('Tentative de parsing depuis String...');
+        hours = json.decode(businessHours);
+        print('Parsé depuis String: $hours');
+      } else if (businessHours is Map) {
+        print('Tentative de parsing depuis Map...');
+        hours = Map<String, dynamic>.from(businessHours);
+        print('Parsé depuis Map: $hours');
+      } else {
+        print('Format non reconnu, utilisation de Map vide');
+        hours = {};
+      }
+    } catch (e) {
+      print('Erreur parsing business_hours: $e');
+      hours = {};
+    }
+
+    print('Hours finales: $hours');
+    print('===============================');
+
+    final dayMapping = {
+      'lundi': 'Lundi',
+      'mardi': 'Mardi',
+      'mercredi': 'Mercredi',
+      'jeudi': 'Jeudi',
+      'vendredi': 'Vendredi',
+      'samedi': 'Samedi',
+      'dimanche': 'Dimanche',
+    };
+    final days = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: days.map((day) {
+          final dayHours = hours[day] as Map<String, dynamic>? ?? {};
+          final open = dayHours['open']?.toString() ?? '';
+          final close = dayHours['close']?.toString() ?? '';
+          final isOpen = open.isNotEmpty && close.isNotEmpty;
+
+          print('Jour $day: ouvert=$open, fermé=$close, isOpen=$isOpen');
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: isOpen ? Colors.green[50] : Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isOpen ? Colors.green[200]! : Colors.grey[300]!,
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  dayMapping[day] ?? day,
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w500,
+                    color: isOpen ? Colors.green[700] : Colors.grey[600],
+                  ),
+                ),
+                Text(
+                  isOpen ? '$open - $close' : 'Fermé',
+                  style: GoogleFonts.poppins(
+                    color: isOpen ? Colors.green[700] : Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildDocumentsSection() {
+    // Vérifier s'il y a des documents uploadés
+    final hasIdDocument = _profile['id_document_path'] != null && 
+                         _profile['id_document_path'].toString().isNotEmpty;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         Text(
-          'Portfolio',
+          'Documents professionnels',
           style: GoogleFonts.poppins(
             fontSize: 20,
             fontWeight: FontWeight.w600,
@@ -475,52 +946,178 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
           ),
         ),
         const SizedBox(height: 16),
-        if (portfolios.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
-            ),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: [
+              _buildDocumentItem(
+                Icons.perm_identity,
+                'Document d\'identité',
+                hasIdDocument ? 'Document uploadé' : 'Aucun document',
+                hasIdDocument,
+              ),
+              const SizedBox(height: 12),
+              _buildDocumentItem(
+                Icons.business,
+                'KBIS / RCCM',
+                'Document manquant',
+                false,
+              ),
+              const SizedBox(height: 12),
+              _buildDocumentItem(
+                Icons.verified,
+                'Licence professionnelle',
+                'Document manquant',
+                false,
+              ),
+              const SizedBox(height: 12),
+              _buildDocumentItem(
+                Icons.security,
+                'Certificat d\'assurance',
+                'Document manquant',
+                false,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDocumentItem(IconData icon, String title, String status, bool isUploaded) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isUploaded ? Colors.green[50] : Colors.orange[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isUploaded ? Colors.green[200]! : Colors.orange[200]!,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            color: isUploaded ? Colors.green[600] : Colors.orange[600],
+            size: 24,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.photo_library_outlined, size: 48, color: Colors.grey[400]),
-                const SizedBox(height: 16),
                 Text(
-                  'Aucun projet dans le portfolio',
+                  title,
                   style: GoogleFonts.poppins(
-                    color: Colors.grey[600],
-                    fontSize: 16,
                     fontWeight: FontWeight.w500,
+                    color: isUploaded ? Colors.green[700] : Colors.orange[700],
                   ),
                 ),
-                const SizedBox(height: 8),
                 Text(
-                  'Ajoutez vos réalisations pour les montrer à vos clients',
+                  status,
                   style: GoogleFonts.poppins(
-                    color: Colors.grey[500],
-                    fontSize: 14,
+                    fontSize: 12,
+                    color: isUploaded ? Colors.green[600] : Colors.orange[600],
                   ),
-                  textAlign: TextAlign.center,
                 ),
               ],
             ),
-          )
-        else
-          // TODO: Afficher les projets du portfolio quand ils seront disponibles
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '${portfolios.length} projet(s) dans le portfolio',
+          ),
+          Icon(
+            isUploaded ? Icons.check_circle : Icons.warning,
+            color: isUploaded ? Colors.green[600] : Colors.orange[600],
+            size: 20,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPortfolioSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Portfolio',
               style: GoogleFonts.poppins(
-                color: Colors.grey[600],
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
               ),
             ),
+            TextButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PortfolioManagementScreen(token: widget.token),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.arrow_forward, size: 16),
+              label: const Text('Gérer'),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF4CAF50),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[200]!),
           ),
+          child: Column(
+            children: [
+              Icon(Icons.photo_library_outlined, size: 48, color: Colors.grey[400]),
+              const SizedBox(height: 16),
+              Text(
+                'Gérer vos projets',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[600],
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Ajoutez et gérez vos réalisations pour les montrer à vos clients',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[500],
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => PortfolioManagementScreen(token: widget.token),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('Gérer mes projets'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4CAF50),
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -601,6 +1198,21 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
         return Icons.school;
       default:
         return Icons.star;
+    }
+  }
+
+  String _getSkillLevelDisplayName(String level) {
+    switch (level.toLowerCase()) {
+      case 'expert':
+        return 'Expert';
+      case 'advanced':
+        return 'Avancé';
+      case 'intermediate':
+        return 'Intermédiaire';
+      case 'beginner':
+        return 'Débutant';
+      default:
+        return 'Non défini';
     }
   }
 

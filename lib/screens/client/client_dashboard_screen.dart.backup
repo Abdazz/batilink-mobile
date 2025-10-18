@@ -1,11 +1,12 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/professional.dart';
 import '../../services/professional_service.dart';
 import '../../services/client_dashboard_service.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import '../../services/api_service.dart';
 import 'professional_search_screen.dart';
 import 'client_completed_quotations_screen.dart';
 import 'client_profile_screen.dart';
@@ -13,9 +14,9 @@ import 'client_profile_screen.dart';
 class ClientDashboardScreen extends StatefulWidget {
   final String token;
   final Map<String, dynamic> userData;
-
+  
   const ClientDashboardScreen({
-    Key? key,
+    Key? key, 
     required this.token,
     required this.userData,
     required Map profile,
@@ -28,12 +29,12 @@ class ClientDashboardScreen extends StatefulWidget {
 class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
   int _selectedIndex = 0;
   List<Professional> _professionals = [];
+  List<dynamic> _favorites = [];
   int _quotationsCount = 0;
   int _professionalsWithQuotationsCount = 0;
-
-  // Statistiques du profil client
   int _totalJobs = 0;
-
+  int _totalFavorites = 0;
+  int _totalReviews = 0;
   final ProfessionalService _professionalService = ProfessionalService(baseUrl: 'http://10.0.2.2:8000');
   final ClientDashboardService _dashboardService = ClientDashboardService(baseUrl: 'http://10.0.2.2:8000');
 
@@ -44,40 +45,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
     _loadProfessionals();
     _loadAppointments();
     _loadRecentActivities();
-    _loadClientStats();
-  }
-
-  Future<void> _loadClientStats() async {
-    try {
-      final token = widget.token;
-      if (token.isEmpty) return;
-
-      final response = await http.get(
-        Uri.parse('http://10.0.2.2:8000/api/client/stats'),
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data is Map<String, dynamic> && data.containsKey('data')) {
-          final stats = data['data'];
-          if (stats is Map<String, dynamic>) {
-            if (mounted) {
-              setState(() {
-                _totalJobs = stats['total_jobs'] ?? 0;
-                // Mettre à jour les compteurs du dashboard avec les vraies données
-                _quotationsCount = _totalJobs;
-              });
-            }
-          }
-        }
-      }
-    } catch (e) {
-      print('Erreur lors du chargement des statistiques client: $e');
-    }
+    _loadProfileStats();
   }
 
   Future<void> _loadDashboardData() async {
@@ -94,7 +62,42 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
     }
   }
 
-  Future<void> _loadProfessionals() async {
+  Future<void> _loadProfileStats() async {
+    try {
+      final token = widget.token;
+      if (token.isEmpty) return;
+
+      // Récupérer les statistiques du profil
+      final response = await http.get(
+        Uri.parse('http://10.0.2.2:8000/api/client/profile'),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data is Map<String, dynamic> && data.containsKey('data')) {
+          final profileData = data['data'];
+          if (profileData is Map<String, dynamic> && profileData.containsKey('stats')) {
+            final stats = profileData['stats'];
+            if (stats is Map<String, dynamic>) {
+              if (mounted) {
+                setState(() {
+                  _totalJobs = stats['total_jobs'] ?? 0;
+                  _totalFavorites = stats['total_favorites'] ?? 0;
+                  _totalReviews = stats['total_reviews'] ?? 0;
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print('Erreur lors du chargement des statistiques du profil: $e');
+    }
+  }
     try {
       final professionals = await _professionalService.getInteractedProfessionals();
       setState(() {
@@ -130,6 +133,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
       if (mounted) {
         setState(() {
           // Créer les rendez-vous à partir des données API
+          final dernierDevisEnvoye = dashboardData['dernier_devis_envoye'];
           final dernierDevisAccepte = dashboardData['dernier_devis_accepte'];
 
           _upcomingAppointments = [];
@@ -147,6 +151,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
 
           // Calculer le nombre de devis
           _quotationsCount = 0;
+          if (dernierDevisEnvoye != null) _quotationsCount++;
           if (dernierDevisAccepte != null) _quotationsCount++;
 
           // Calculer le nombre de professionnels avec lesquels le client a interagi
@@ -155,6 +160,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
       }
     } catch (e) {
       print('Erreur lors du chargement des rendez-vous: $e');
+      // Garder les données de démonstration en cas d'erreur
     }
   }
 
@@ -195,6 +201,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
       }
     } catch (e) {
       print('Erreur lors du chargement des activités récentes: $e');
+      // Garder les données de démonstration en cas d'erreur
     }
   }
 
@@ -355,6 +362,36 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
               ),
             ],
           ),
+          // const SizedBox(height: 20),
+          // Container(
+          //   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          //   decoration: BoxDecoration(
+          //     color: Colors.white.withOpacity(0.15),
+          //     borderRadius: BorderRadius.circular(12),
+          //   ),
+          //   child: Row(
+          //     children: [
+          //       const Icon(Icons.star, color: Colors.amber, size: 20),
+          //       const SizedBox(width: 8),
+          //       Text(
+          //         'Fidélité : 125 points',
+          //         style: GoogleFonts.poppins(
+          //           color: Colors.white,
+          //           fontWeight: FontWeight.w500,
+          //         ),
+          //       ),
+          //       const Spacer(),
+          //       Text(
+          //         'Voir plus',
+          //         style: GoogleFonts.poppins(
+          //           color: Colors.white,
+          //           fontSize: 12,
+          //           decoration: TextDecoration.underline,
+          //         ),
+          //       ),
+          //     ],
+          //   ),
+          // ),
         ],
       ),
     );
@@ -365,8 +402,17 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
       children: [
         Expanded(
           child: _buildStatCard(
+            'Prochains RDV',
+            _upcomingAppointments.length.toString(),
+            Icons.calendar_today,
+            const Color(0xFF4CAF50),
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: _buildStatCard(
             'Devis',
-            _quotationsCount.toString(),
+            _totalJobs.toString(),
             Icons.receipt_long,
             const Color(0xFF2196F3),
           ),
@@ -374,17 +420,8 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
         const SizedBox(width: 16),
         Expanded(
           child: _buildStatCard(
-            'Professionnels',
-            _professionalsWithQuotationsCount.toString(),
-            Icons.people,
-            const Color(0xFF4CAF50),
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _buildStatCard(
             'Favoris',
-            '0', // TODO: Récupérer depuis l'API quand disponible
+            _totalFavorites.toString(),
             Icons.favorite,
             const Color(0xFFE91E63),
           ),
@@ -561,16 +598,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () {
-                      // Naviguer vers les devis
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => ClientCompletedQuotationsScreen(
-                          token: widget.token,
-                          userData: widget.userData,
-                        )),
-                      );
-                    },
+                    onPressed: () {},
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Color(0xFF4CAF50)),
                       shape: RoundedRectangleBorder(
@@ -578,7 +606,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
                       ),
                     ),
                     child: Text(
-                      'Voir devis',
+                      'Détails',
                       style: GoogleFonts.poppins(
                         color: const Color(0xFF4CAF50),
                       ),
@@ -627,16 +655,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
               ),
             ),
             TextButton(
-              onPressed: () {
-                // Naviguer vers la recherche de professionnels
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => ProfessionalSearchScreen(
-                    token: widget.token,
-                    userData: widget.userData,
-                  )),
-                );
-              },
+              onPressed: () {},
               child: Text(
                 'Voir tout',
                 style: GoogleFonts.poppins(
@@ -795,14 +814,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
                           width: 120,
                           child: ElevatedButton(
                             onPressed: () {
-                              // Naviguer vers les détails du professionnel ou la recherche
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => ProfessionalSearchScreen(
-                                  token: widget.token,
-                                  userData: widget.userData,
-                                )),
-                              );
+                              // Navigate to professional details
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF4CAF50),

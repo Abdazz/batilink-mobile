@@ -53,16 +53,26 @@ class _ClientSignInFormState extends State<ClientSignInForm> {
         // Accéder aux données dans la structure imbriquée
         final data = responseData['data'] ?? {};
         final token = data['access_token'];
-        final userData = data['user'];
+
+        // Gérer la structure de réponse qui peut être différente selon l'endpoint
+        Map<String, dynamic> userData;
+        if (data.containsKey('user') && data['user'] is Map) {
+          userData = data['user'];
+        } else if (responseData.containsKey('user') && responseData['user'] is Map) {
+          userData = responseData['user'];
+        } else {
+          userData = data;
+        }
 
         print('Token reçu: $token');
         print('User data reçu: $userData');
+        print('Structure de réponse: ${responseData.keys.toList()}');
 
         if (token != null && token.toString().isNotEmpty) {
           // Stocker le token dans SharedPreferences pour les futures requêtes
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('access_token', token.toString());
-          await prefs.setString('user', jsonEncode(userData ?? {}));
+          await prefs.setString('user', jsonEncode(userData));
 
           if (mounted) {
             Navigator.pushReplacementNamed(
@@ -70,7 +80,7 @@ class _ClientSignInFormState extends State<ClientSignInForm> {
               '/client/dashboard',
               arguments: {
                 'token': token,
-                'userData': userData ?? {},
+                'userData': userData,
               },
             );
           }

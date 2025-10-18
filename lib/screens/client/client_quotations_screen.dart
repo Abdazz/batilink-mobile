@@ -1,13 +1,22 @@
 import 'dart:convert';
 import 'package:batilink_mobile_app/screens/client/professional_search_screen.dart';
+import 'package:batilink_mobile_app/screens/unified_quotation_detail_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class ClientQuotationsScreen extends StatefulWidget {
-  const ClientQuotationsScreen({Key? key}) : super(key: key);
+  final String? token;
+  final Map<String, dynamic>? userData;
+
+  const ClientQuotationsScreen({
+    Key? key,
+    this.token,
+    this.userData,
+  }) : super(key: key);
 
   @override
   _ClientQuotationsScreenState createState() => _ClientQuotationsScreenState();
@@ -17,23 +26,43 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
   List<dynamic> _quotations = [];
   bool _isLoading = true;
   String? _errorMessage;
+  String _token = '';
 
   @override
   void initState() {
     super.initState();
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    // Récupérer le token depuis SharedPreferences comme secours
+    final prefs = await SharedPreferences.getInstance();
+    final tokenFromPrefs = prefs.getString('access_token') ?? '';
+
+    // Utiliser le token passé en argument, ou celui de SharedPreferences comme secours
+    final finalToken = widget.token?.isNotEmpty == true ? widget.token! : tokenFromPrefs;
+
+    if (finalToken.isEmpty) {
+      setState(() {
+        _errorMessage = 'Token d\'authentification manquant';
+        _isLoading = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _token = finalToken;
+    });
+
     _loadQuotations();
   }
 
   Future<void> _loadQuotations() async {
     try {
-      print('🔍 DEBUG: Début du chargement des devis');
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token');
+      // Utiliser le token récupéré depuis SharedPreferences comme secours
+      final token = _token;
 
-      print('🔍 DEBUG: Token récupéré depuis SharedPreferences: ${token != null ? 'Token présent (${token.length} caractères)' : 'Token NULL'}');
-
-      if (token == null || token.isEmpty) {
-        print('❌ DEBUG: Token manquant dans SharedPreferences');
+      if (token.isEmpty) {
         setState(() {
           _errorMessage = 'Token d\'authentification manquant';
           _isLoading = false;
@@ -41,7 +70,6 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
         return;
       }
 
-      print('✅ DEBUG: Token valide trouvé, appel de l\'API...');
       final response = await http.get(
         Uri.parse('http://10.0.2.2:8000/api/quotations'),
         headers: {
@@ -50,27 +78,20 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
         },
       );
 
-      print('🔍 DEBUG: Réponse API reçue - Status: ${response.statusCode}');
-
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        print('✅ DEBUG: Réponse API OK, données reçues: ${data.toString()}');
         setState(() {
           _quotations = data['data'] ?? [];
           _isLoading = false;
           _errorMessage = null;
         });
       } else {
-        print('❌ DEBUG: Réponse API échouée - Status: ${response.statusCode}');
-        final errorBody = await response.body;
-        print('❌ DEBUG: Corps de l\'erreur: $errorBody');
         setState(() {
           _errorMessage = 'Erreur lors du chargement des devis';
           _isLoading = false;
         });
       }
     } catch (e) {
-      print('❌ DEBUG: Exception attrapée: $e');
       setState(() {
         _errorMessage = 'Erreur de connexion';
         _isLoading = false;
@@ -82,6 +103,8 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
     switch (status) {
       case 'pending':
         return 'En attente';
+      case 'quoted':
+        return 'Devis reçu';
       case 'accepted':
         return 'Accepté';
       case 'rejected':
@@ -97,12 +120,14 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
     switch (status) {
       case 'pending':
         return Colors.orange;
+      case 'quoted':
+        return Colors.blue;
       case 'accepted':
         return Colors.green;
       case 'rejected':
         return Colors.red;
       case 'completed':
-        return Colors.blue;
+        return Colors.purple;
       default:
         return Colors.grey;
     }
@@ -120,7 +145,7 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
             color: Colors.white,
           ),
         ),
-        backgroundColor: const Color(0xFF4CAF50),
+        backgroundColor: const Color(0xFFFFCC00),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -180,7 +205,7 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
             (route) => false,
           );
         },
-        backgroundColor: const Color(0xFF4CAF50),
+        backgroundColor: const Color(0xFFFFCC00),
         icon: const Icon(Icons.add),
         label: Text(
           'Nouvelle demande',
@@ -256,7 +281,18 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () {
-          // TODO: Naviguer vers les détails de la demande
+          // Naviguer vers les détails unifiés du devis
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => UnifiedQuotationDetailScreen(
+                quotationId: quotation['id'].toString(),
+                quotation: quotation,
+                token: _token,
+                context: QuotationContext.client,
+              ),
+            ),
+          );
         },
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -302,15 +338,14 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
               if (quotation['professional'] != null) ...[
                 Row(
                   children: [
-                    CircleAvatar(
-                      backgroundColor: Colors.grey[200],
-                      child: Text(
-                        quotation['professional']['company_name'][0].toUpperCase(),
-                        style: GoogleFonts.poppins(
-                          color: const Color(0xFF4CAF50),
-                          fontWeight: FontWeight.w600,
-                        ),
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(25),
+                        color: Colors.grey[200],
                       ),
+                      child: _getProfessionalPhoto(quotation['professional']),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -423,6 +458,94 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
         ),
       ),
     );
+  }
+
+  Widget _getProfessionalPhoto(Map<String, dynamic> professional) {
+    // Essaie d'extraire l'URL de la photo depuis différentes sources possibles
+    String? avatarUrl;
+
+    // Essaie profile_photo.url d'abord (nouvelle structure)
+    if (professional['profile_photo'] is Map<String, dynamic>) {
+      avatarUrl = professional['profile_photo']['url'];
+    }
+
+    // Essaie avatar_url ensuite (ancienne structure)
+    if (avatarUrl == null || avatarUrl.isEmpty) {
+      avatarUrl = professional['avatar_url'];
+    }
+
+    // Essaie user.profile_photo_url
+    if (avatarUrl == null || avatarUrl.isEmpty) {
+      avatarUrl = professional['user']?['profile_photo_url'];
+    }
+
+    // Construit l'URL complète Laravel si nécessaire
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      if (!avatarUrl.startsWith('http://') && !avatarUrl.startsWith('https://')) {
+        if (avatarUrl.startsWith('/storage/') || avatarUrl.startsWith('storage/')) {
+          final cleanPath = avatarUrl.startsWith('/') ? avatarUrl.substring(1) : avatarUrl;
+          avatarUrl = 'http://10.0.2.2:8000/$cleanPath';
+        }
+      }
+    }
+
+    return avatarUrl != null && avatarUrl.isNotEmpty
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(25),
+            child: CachedNetworkImage(
+              imageUrl: avatarUrl,
+              width: 50,
+              height: 50,
+              fit: BoxFit.cover,
+              placeholder: (context, url) => Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(25),
+                  color: Colors.grey[200],
+                ),
+                child: const Center(
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+              errorWidget: (context, url, error) => Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(25),
+                  color: Colors.grey[200],
+                ),
+                child: Center(
+                  child: Text(
+                    professional['company_name']?[0]?.toUpperCase() ?? 'N',
+                    style: GoogleFonts.poppins(
+                      color: const Color(0xFF4CAF50),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          )
+        : Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(25),
+              color: Colors.grey[200],
+            ),
+            child: Center(
+              child: Text(
+                professional['company_name']?[0]?.toUpperCase() ?? 'N',
+                style: GoogleFonts.poppins(
+                  color: const Color(0xFF4CAF50),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 18,
+                ),
+              ),
+            ),
+          );
   }
 
   String _formatDate(String? dateString) {

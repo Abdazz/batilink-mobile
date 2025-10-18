@@ -1,0 +1,4 @@
+enum QuotationContext {
+  professional,
+  client,
+}

@@ -25,22 +25,54 @@ class ClientFavoritesScreen extends StatefulWidget {
 class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
   List<dynamic> _favorites = [];
   bool _isLoading = true;
+  String _token = '';
 
   @override
   void initState() {
     super.initState();
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    // Récupérer le token depuis SharedPreferences comme secours
+    final prefs = await SharedPreferences.getInstance();
+    final tokenFromPrefs = prefs.getString('access_token') ?? '';
+
+    print('=== DEBUG INITIALIZATION ===');
+    print('Token depuis widget: ${widget.token.isNotEmpty ? 'présent' : 'vide'}');
+    print('Token depuis prefs: ${tokenFromPrefs.isNotEmpty ? tokenFromPrefs.substring(0, 20) + '...' : 'VIDE'}');
+
+    // Utiliser le token passé en argument s'il n'est pas vide, sinon utiliser celui de SharedPreferences
+    final finalToken = (widget.token?.isNotEmpty ?? false) ? widget.token! : tokenFromPrefs;
+
+    if (finalToken.isEmpty) {
+      _showError('Token d\'authentification manquant. Veuillez vous reconnecter.');
+      return;
+    }
+
+    print('Token final utilisé: ${finalToken.substring(0, 20)}...');
+
+    setState(() {
+      _token = finalToken;
+    });
+
     _loadFavorites();
   }
 
   Future<void> _loadFavorites() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token');
+      // Utiliser le token récupéré depuis SharedPreferences comme secours
+      final token = _token;
 
-      if (token == null || token.isEmpty) {
+      print('=== DEBUG FAVORITES ===');
+      print('Token utilisé: ${_token.isNotEmpty ? _token.substring(0, 20) + '...' : 'VIDE'}');
+
+      if (token.isEmpty) {
         _showError('Token d\'authentification manquant');
         return;
       }
+
+      print('URL appelée: ${ApiService.baseUrl}/api/favorites/professionals');
 
       final response = await http.get(
         Uri.parse('${ApiService.baseUrl}/api/favorites/professionals'),
@@ -50,26 +82,42 @@ class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
         },
       );
 
+      print('Code de statut: ${response.statusCode}');
+      print('Corps de la réponse: ${response.body}');
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        print('Données reçues: $data');
+        print('Type de data: ${data.runtimeType}');
+
+        if (data is Map<String, dynamic>) {
+          print('Clés disponibles: ${data.keys.toList()}');
+          final favoritesData = data['data'];
+          print('Données favoris: $favoritesData');
+          print('Type des données favoris: ${favoritesData.runtimeType}');
+        }
+
         setState(() {
           _favorites = data['data'] ?? [];
           _isLoading = false;
         });
+        print('Nombre de favoris chargés: ${_favorites.length}');
       } else {
-        _showError('Erreur lors du chargement des favoris');
+        print('Erreur HTTP ${response.statusCode}: ${response.body}');
+        _showError('Erreur lors du chargement des favoris (${response.statusCode})');
       }
     } catch (e) {
-      _showError('Erreur de connexion');
+      print('Exception lors du chargement des favoris: $e');
+      _showError('Erreur de connexion: $e');
     }
   }
 
   Future<void> _removeFromFavorites(String professionalId) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token');
+      // Utiliser le token récupéré depuis SharedPreferences comme secours
+      final token = _token;
 
-      if (token == null || token.isEmpty) {
+      if (token.isEmpty) {
         _showError('Token d\'authentification manquant');
         return;
       }
@@ -118,6 +166,94 @@ class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
     }
   }
 
+  Widget _getProfessionalPhoto(Map<String, dynamic> professional) {
+    // Essaie d'extraire l'URL de la photo depuis différentes sources possibles
+    String? avatarUrl;
+
+    // Essaie profile_photo.url d'abord (nouvelle structure)
+    if (professional['profile_photo'] is Map<String, dynamic>) {
+      avatarUrl = professional['profile_photo']['url'];
+    }
+
+    // Essaie avatar_url ensuite (ancienne structure)
+    if (avatarUrl == null || avatarUrl.isEmpty) {
+      avatarUrl = professional['avatar_url'];
+    }
+
+    // Essaie user.profile_photo_url
+    if (avatarUrl == null || avatarUrl.isEmpty) {
+      avatarUrl = professional['user']?['profile_photo_url'];
+    }
+
+    // Construit l'URL complète Laravel si nécessaire
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      if (!avatarUrl.startsWith('http://') && !avatarUrl.startsWith('https://')) {
+        if (avatarUrl.startsWith('/storage/') || avatarUrl.startsWith('storage/')) {
+          final cleanPath = avatarUrl.startsWith('/') ? avatarUrl.substring(1) : avatarUrl;
+          avatarUrl = 'http://10.0.2.2:8000/$cleanPath';
+        }
+      }
+    }
+
+    return avatarUrl != null && avatarUrl.isNotEmpty
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: CachedNetworkImage(
+              imageUrl: avatarUrl,
+              width: 60,
+              height: 60,
+              fit: BoxFit.cover,
+              placeholder: (context, url) => Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.grey[200],
+                ),
+                child: const Center(
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+              errorWidget: (context, url, error) => Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.grey[200],
+                ),
+                child: Center(
+                  child: Text(
+                    professional['company_name']?[0]?.toUpperCase() ?? 'N',
+                    style: GoogleFonts.poppins(
+                      color: const Color(0xFF4CAF50),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 24,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          )
+        : Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              color: Colors.grey[200],
+            ),
+            child: Center(
+              child: Text(
+                professional['company_name']?[0]?.toUpperCase() ?? 'N',
+                style: GoogleFonts.poppins(
+                  color: const Color(0xFF4CAF50),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 24,
+                ),
+              ),
+            ),
+          );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -130,7 +266,7 @@ class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
             color: Colors.white,
           ),
         ),
-        backgroundColor: const Color(0xFF4CAF50),
+        backgroundColor: const Color(0xFFFFCC00),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -201,7 +337,7 @@ class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
               style: GoogleFonts.poppins(),
             ),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4CAF50),
+              backgroundColor: const Color(0xFFFFCC00),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
@@ -248,37 +384,7 @@ class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
                   borderRadius: BorderRadius.circular(8),
                   color: Colors.grey[200],
                 ),
-                child: favorite['avatar_url'] != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: CachedNetworkImage(
-                          imageUrl: favorite['avatar_url'],
-                          fit: BoxFit.cover,
-                          placeholder: (context, url) => const Center(
-                            child: CircularProgressIndicator(),
-                          ),
-                          errorWidget: (context, url, error) => Center(
-                            child: Text(
-                              favorite['company_name'][0].toUpperCase(),
-                              style: GoogleFonts.poppins(
-                                fontSize: 24,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF4CAF50),
-                              ),
-                            ),
-                          ),
-                        ),
-                      )
-                    : Center(
-                        child: Text(
-                          favorite['company_name'][0].toUpperCase(),
-                          style: GoogleFonts.poppins(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF4CAF50),
-                          ),
-                        ),
-                      ),
+                child: _getProfessionalPhoto(favorite),
               ),
 
               const SizedBox(width: 16),

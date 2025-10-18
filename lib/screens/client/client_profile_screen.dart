@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../services/auth_service.dart';
 import 'client_dashboard_screen.dart';
 import 'professional_search_screen.dart';
+import 'client_completed_quotations_screen.dart';
 
 class ClientProfileScreen extends StatefulWidget {
   final String token;
@@ -26,24 +27,157 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
   int _selectedIndex = 3; // Index pour l'onglet Profil
+  String? _errorMessage;
+  String _token = '';
+
+  // Statistiques du client
+  int _totalJobs = 0;
+  int _totalFavorites = 0;
+  int _totalReviews = 0;
 
   @override
   void initState() {
     super.initState();
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    // Récupérer le token depuis SharedPreferences comme secours
+    final prefs = await SharedPreferences.getInstance();
+    final tokenFromPrefs = prefs.getString('access_token') ?? '';
+
+    // Utiliser le token passé en argument, ou celui de SharedPreferences comme secours
+    final finalToken = widget.token.isNotEmpty ? widget.token : tokenFromPrefs;
+
+    if (finalToken.isEmpty) {
+      _showError('Token d\'authentification manquant. Veuillez vous reconnecter.');
+      return;
+    }
+
+    // Mettre à jour le token du widget
+    setState(() {
+      _token = finalToken;
+    });
+
     _loadUserProfile();
   }
 
   Future<void> _loadUserProfile() async {
     try {
-      final token = widget.token;
+      final token = _token; // Utiliser le token récupéré depuis SharedPreferences
+      final authService = AuthService(baseUrl: 'http://10.0.2.2:8000');
 
       if (token == null || token.isEmpty) {
         _showError('Token d\'authentification manquant');
         return;
       }
 
+      print('=== DEBUG PROFIL CLIENT ===');
+      print('Token utilisé: ${token.substring(0, 20)}...');
+      print('Données utilisateur reçues lors du login: ${widget.userData}');
+
+      final response = await authService.getClientProfile(accessToken: token);
+
+      print('Réponse reçue - Status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        print('Données décodées: $data');
+        print('Type des données: ${data.runtimeType}');
+
+        // Vérification de la structure de la réponse
+        if (data is Map<String, dynamic>) {
+          print('Clés disponibles dans la réponse: ${data.keys.toList()}');
+
+          if (data.containsKey('data')) {
+            final responseData = data['data'];
+            print('Données de réponse trouvées: $responseData');
+            print('Type des données de réponse: ${responseData.runtimeType}');
+
+            if (responseData is Map<String, dynamic>) {
+              print('Clés dans responseData: ${responseData.keys.toList()}');
+
+              // Extraire les données utilisateur depuis le champ 'user'
+              if (responseData.containsKey('user')) {
+                final userData = responseData['user'];
+                print('Données utilisateur extraites: $userData');
+                print('Type des données utilisateur: ${userData.runtimeType}');
+
+                if (userData is Map<String, dynamic>) {
+                  print('Clés utilisateur: ${userData.keys.toList()}');
+
+                  setState(() {
+                    _userData = userData;
+                    _isLoading = false;
+                  });
+
+                  print('Profil utilisateur chargé avec succès: ${_userData?['first_name']} ${_userData?['last_name']} - ${_userData?['email']}');
+
+                  // Mettre à jour les statistiques si elles sont disponibles dans responseData
+                  if (responseData.containsKey('stats')) {
+                    final stats = responseData['stats'];
+                    if (stats is Map<String, dynamic>) {
+                      setState(() {
+                        _totalJobs = stats['total_jobs'] ?? 0;
+                        _totalFavorites = stats['total_favorites'] ?? 0;
+                        _totalReviews = stats['total_reviews'] ?? 0;
+                      });
+                      print('Statistiques mises à jour: jobs=$_totalJobs, favorites=$_totalFavorites, reviews=$_totalReviews');
+                    }
+                  } else {
+                    // Si les statistiques ne sont pas dans la réponse du profil, essayer de les récupérer séparément
+                    _loadClientStats();
+                  }
+
+                  return;
+                } else {
+                  print('ERREUR: responseData["user"] n\'est pas un Map');
+                }
+              } else {
+                print('ERREUR: Clé "user" manquante dans responseData');
+              }
+            } else {
+              print('ERREUR: data["data"] n\'est pas un Map');
+            }
+          } else {
+            print('ERREUR: Clé "data" manquante dans la réponse');
+          }
+        } else {
+          print('ERREUR: Réponse n\'est pas un Map');
+        }
+
+        // Si on arrive ici, c'est qu'il y a un problème avec la structure
+        print('Problème avec la structure de la réponse API');
+        _showError('Format de réponse inattendu du serveur');
+        return;
+      } else {
+        print('Échec API - Status: ${response.statusCode}');
+        print('Corps de l\'erreur: ${response.body}');
+        // Afficher une erreur au lieu d'utiliser des données de test
+        setState(() {
+          _errorMessage = 'Erreur lors de la récupération du profil (${response.statusCode})';
+          _isLoading = false;
+        });
+        return;
+      }
+    } catch (e) {
+      print('Exception lors du chargement du profil: $e');
+      // Afficher une erreur au lieu d'utiliser des données de test
+      setState(() {
+        _errorMessage = 'Erreur de connexion lors du chargement du profil';
+        _isLoading = false;
+      });
+      return;
+    }
+  }
+
+  Future<void> _loadClientStats() async {
+    try {
+      final token = _token;
+      if (token.isEmpty) return;
+
       final response = await http.get(
-        Uri.parse('http://10.0.2.2:8000/api/client/profile'),
+        Uri.parse('http://10.0.2.2:8000/api/client/stats'),
         headers: {
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
@@ -52,35 +186,21 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        setState(() {
-          _userData = data['data'];
-          _isLoading = false;
-        });
-      } else {
-        // Si l'API ne fonctionne pas, utiliser des données de test
-        _loadTestData();
+        if (data is Map<String, dynamic> && data.containsKey('data')) {
+          final stats = data['data'];
+          if (stats is Map<String, dynamic>) {
+            setState(() {
+              _totalJobs = stats['total_jobs'] ?? 0;
+              _totalFavorites = stats['total_favorites'] ?? 0;
+              _totalReviews = stats['total_reviews'] ?? 0;
+            });
+            print('Statistiques client récupérées: jobs=$_totalJobs, favorites=$_totalFavorites, reviews=$_totalReviews');
+          }
+        }
       }
     } catch (e) {
-      // En cas d'erreur, utiliser des données de test
-      _loadTestData();
+      print('Erreur lors du chargement des statistiques: $e');
     }
-  }
-
-  void _loadTestData() {
-    setState(() {
-      _userData = {
-        'id': '05fbf42b-469b-4743-a7ac-c1d77f0be3cd',
-        'first_name': 'John',
-        'last_name': 'Doe',
-        'email': 'johndoe20@gmail.com',
-        'phone': '+12345678911',
-        'role': 'client',
-        'avatar': null,
-        'created_at': '2025-10-13T09:57:39.000000Z',
-        'updated_at': '2025-10-13T09:57:39.000000Z',
-      };
-      _isLoading = false;
-    });
   }
 
   void _showError(String message) {
@@ -124,8 +244,16 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
           ),
         );
         break;
-      case 2: // Rendez-vous
-        // TODO: Implémenter la page des rendez-vous
+      case 2: // Mes devis
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ClientCompletedQuotationsScreen(
+              token: widget.token,
+              userData: widget.userData,
+            ),
+          ),
+        );
         break;
       case 3: // Profil (page actuelle)
         break;
@@ -134,23 +262,14 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
   Future<void> _logout() async {
     try {
-      final token = widget.token;
-
-      if (token != null) {
-        final authService = AuthService(baseUrl: 'http://10.0.2.2:8000');
-        await authService.logout(token);
-      }
-
-      // Supprimer les données locales après l'appel API
+      // Supprimer toutes les données locales (comme dans le profil professionnel)
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('token');
-      await prefs.remove('user');
-      await prefs.remove('user_role');
+      await prefs.clear(); // Vider toutes les préférences
 
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(
           context,
-          '/welcome',
+          '/onboarding-role',
           (route) => false,
         );
       }
@@ -178,7 +297,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
             color: Colors.white,
           ),
         ),
-        backgroundColor: const Color(0xFF4CAF50),
+        backgroundColor: const Color(0xFFFFCC00),
         elevation: 0,
         // Enlever le bouton retour
         automaticallyImplyLeading: false,
@@ -186,7 +305,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
       body: _isLoading
           ? const Center(
               child: CircularProgressIndicator(
-                color: Color(0xFF4CAF50),
+                color: Color(0xFFFFCC00),
               ),
             )
           : _userData == null
@@ -201,7 +320,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'Erreur lors du chargement du profil',
+                        _errorMessage ?? 'Erreur lors du chargement du profil',
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           color: Colors.grey[600],
@@ -211,7 +330,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                       ElevatedButton(
                         onPressed: _loadUserProfile,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF4CAF50),
+                          backgroundColor: const Color(0xFFFFCC00),
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
@@ -280,7 +399,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         currentIndex: _selectedIndex,
         onTap: _onNavigationTap,
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFF4CAF50),
+        selectedItemColor: const Color(0xFFFFCC00),
         unselectedItemColor: Colors.grey,
         items: const [
           BottomNavigationBarItem(
@@ -292,8 +411,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
             label: 'Recherche',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today),
-            label: 'Rendez-vous',
+            icon: Icon(Icons.receipt_long),
+            label: 'Mes devis',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),
@@ -335,7 +454,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                     shape: BoxShape.circle,
                     color: Colors.grey[200],
                     border: Border.all(
-                      color: const Color(0xFF4CAF50),
+                      color: const Color(0xFFFFCC00),
                       width: 2,
                     ),
                   ),
@@ -441,21 +560,42 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
           icon: Icons.request_quote,
           title: 'Mes demandes de devis',
           subtitle: 'Voir toutes vos demandes et leurs réponses',
-          onTap: () => Navigator.pushNamed(context, '/client/quotations'),
+          onTap: () => Navigator.pushNamed(
+            context,
+            '/client/quotations',
+            arguments: {
+              'token': widget.token,
+              'userData': widget.userData,
+            },
+          ),
         ),
         const SizedBox(height: 8),
         _buildActionButton(
           icon: Icons.favorite,
           title: 'Mes professionnels favoris',
           subtitle: 'Accéder rapidement à vos professionnels préférés',
-          onTap: () => Navigator.pushNamed(context, '/client/favorites'),
+          onTap: () => Navigator.pushNamed(
+            context,
+            '/client/favorites',
+            arguments: {
+              'token': widget.token,
+              'userData': widget.userData,
+            },
+          ),
         ),
         const SizedBox(height: 8),
         _buildActionButton(
           icon: Icons.settings,
           title: 'Paramètres du profil',
           subtitle: 'Modifier vos informations personnelles',
-          onTap: () => Navigator.pushNamed(context, '/client/profile/edit'),
+          onTap: () => Navigator.pushNamed(
+            context,
+            '/client/profile/edit',
+            arguments: {
+              'token': widget.token,
+              'userData': widget.userData,
+            },
+          ),
         ),
       ],
     );
@@ -537,9 +677,9 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            _buildStatItem('0', 'Devis envoyés'),
-            _buildStatItem('0', 'Professionnels favoris'),
-            _buildStatItem('0', 'Projets terminés'),
+            _buildStatItem(_totalJobs.toString(), 'Devis envoyés'),
+            _buildStatItem(_totalFavorites.toString(), 'Professionnels favoris'),
+            _buildStatItem(_totalReviews.toString(), 'Projets terminés'),
           ],
         ),
       ),

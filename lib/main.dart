@@ -16,8 +16,10 @@ import 'screens/client/auth/client_sign_in_screen.dart';
 import 'screens/client/auth/client_sign_up_screen.dart';
 import 'screens/client/client_profile_screen.dart';
 import 'screens/client/client_quotations_screen.dart';
-import 'screens/client/client_favorites_screen.dart';
+import 'screens/unified_quotation_detail_screen.dart';
+import 'screens/client/client_completed_quotations_screen.dart';
 import 'constants.dart';
+import 'screens/client/client_favorites_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -102,19 +104,43 @@ class MyApp extends StatelessWidget {
           profile: {},
         );
       },
-      '/client/profile': (context) => const ClientProfileScreen(
-        token: '',
-        userData: {},
-      ), // TODO: Fix this - routes with parameters need different handling
-      '/client/profile/edit': (context) => const ClientProfileScreen(
-        token: '',
-        userData: {},
-      ), // TODO: Créer une page d'édition du profil avec paramètres appropriés
-      '/client/quotations': (context) => const ClientQuotationsScreen(),
-      '/client/favorites': (context) => const ClientFavoritesScreen(
-        token: '',
-        userData: {},
-      ),
+      '/client/profile': (context) {
+        final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+        return ClientProfileScreen(
+          token: args?['token'] ?? '',
+          userData: args?['userData'] ?? <String, dynamic>{},
+        );
+      },
+      '/client/profile/edit': (context) {
+        final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+        return ClientProfileScreen(
+          token: args?['token'] ?? '',
+          userData: args?['userData'] ?? <String, dynamic>{},
+        );
+      },
+      '/client/quotations': (context) {
+        final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+        return ClientQuotationsScreen(
+          token: args?['token'],
+          userData: args?['userData'],
+        );
+      },
+      '/client/quotation-detail': (context) {
+        final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+        return UnifiedQuotationDetailScreen(
+          quotationId: args?['quotationId'] ?? '',
+          quotation: args?['quotation'] ?? <String, dynamic>{},
+          token: args?['token'] ?? '',
+          context: args?['context'] ?? QuotationContext.client,
+        );
+      },
+      '/client/completed-quotations': (context) {
+        final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+        return ClientCompletedQuotationsScreen(
+          token: args?['token'],
+          userData: args?['userData'],
+        );
+      },
       },
     );
   }

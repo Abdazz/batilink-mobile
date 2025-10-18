@@ -11,7 +11,7 @@ import '../../../models/professional.dart';
 import 'professional_detail_screen.dart';
 import '../../services/api_service.dart';
 import 'client_dashboard_screen.dart';
-import 'client_quotations_screen.dart';
+import 'client_completed_quotations_screen.dart';
 import 'client_profile_screen.dart';
 
 class ProfessionalSearchScreen extends StatefulWidget {
@@ -47,11 +47,14 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
         ),
       );
     } else if (index == 2) {
-      // Naviguer vers les rendez-vous
+      // Naviguer vers mes devis
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => const ClientQuotationsScreen(),
+          builder: (context) => ClientCompletedQuotationsScreen(
+            token: widget.token,
+            userData: widget.userData,
+          ),
         ),
       );
     } else if (index == 3) {
@@ -182,6 +185,24 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
         final List<dynamic> professionalsJson = professionalsData['data'] ?? [];
 
         print('Données reçues: ${professionalsJson.length} professionnels');
+
+        // Debug: Afficher les données du premier professionnel pour voir la structure
+        if (professionalsJson.isNotEmpty) {
+          print('=== DEBUG PREMIER PROFESSIONNEL ===');
+          print('Premier professionnel brut: ${professionalsJson[0]}');
+
+          final firstPro = professionalsJson[0] as Map<String, dynamic>;
+          print('Champs disponibles: ${firstPro.keys.toList()}');
+          print('profile_photo présent: ${firstPro.containsKey('profile_photo')}');
+          if (firstPro.containsKey('profile_photo')) {
+            print('profile_photo value: ${firstPro['profile_photo']}');
+            print('profile_photo type: ${firstPro['profile_photo'].runtimeType}');
+          }
+          print('avatar_url présent: ${firstPro.containsKey('avatar_url')}');
+          if (firstPro.containsKey('avatar_url')) {
+            print('avatar_url value: ${firstPro['avatar_url']}');
+          }
+        }
 
         setState(() {
           if (reset) {
@@ -415,8 +436,8 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
             label: 'Recherche',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today),
-            label: 'Rendez-vous',
+            icon: Icon(Icons.receipt_long),
+            label: 'Mes devis',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),
@@ -647,11 +668,11 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
                     borderRadius: BorderRadius.circular(8),
                     color: Colors.grey[200],
                   ),
-                  child: professional.avatarUrl != null
+                  child: professional.fullAvatarUrl != null
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(8),
                           child: CachedNetworkImage(
-                            imageUrl: professional.avatarUrl!,
+                            imageUrl: professional.fullAvatarUrl!,
                             fit: BoxFit.cover,
                             placeholder: (context, url) => const Center(
                               child: CircularProgressIndicator(),

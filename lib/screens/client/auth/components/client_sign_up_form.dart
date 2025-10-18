@@ -80,9 +80,16 @@ class _ClientSignUpFormState extends State<ClientSignUpForm> {
             await prefs.setString('access_token', responseData['data']['access_token']);
             await prefs.setString('user', jsonEncode(responseData['data']['user']));
             
-            // Rediriger vers le tableau de bord client
+            // Rediriger vers le tableau de bord client avec les arguments nécessaires
             if (mounted) {
-              Navigator.pushReplacementNamed(context, '/client/dashboard');
+              Navigator.pushReplacementNamed(
+                context, 
+                '/client/dashboard',
+                arguments: {
+                  'token': responseData['data']['access_token'],
+                  'userData': responseData['data']['user'],
+                },
+              );
             }
           } else {
             // Si pas de token mais réponse 200/201, rediriger vers la connexion

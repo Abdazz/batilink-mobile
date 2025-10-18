@@ -71,14 +71,14 @@ class _ProfessionalCompleteProfileScreenState extends State<ProfessionalComplete
               print('Récupération du profil mis à jour...');
               final updatedProfileResp = await _auth.getProfessionalProfile(accessToken: token);
               if (updatedProfileResp.statusCode == 200) {
-                final updatedProfData = jsonDecode(updatedProfileResp.body);
-                final updatedProfile = (updatedProfData is Map && updatedProfData['data'] != null) ? updatedProfData['data'] : updatedProfData;
+                final updatedProfile = await _auth.parseProfessionalProfileResponse(updatedProfileResp);
                 print('Profil mis à jour récupéré: $updatedProfile');
                 print('=== DEBUG - Profil récupéré après mise à jour ===');
-                if (updatedProfile is List && updatedProfile.isNotEmpty) {
-                  print('Premier élément du profil: ${updatedProfile[0]}');
-                  print('profile_completed dans le profil récupéré: ${updatedProfile[0]['profile_completed']}');
-                } else if (updatedProfile is Map) {
+                if (updatedProfile != null) {
+                  // Sauvegarder l'ID du profil pour le retrouver plus tard
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('last_profile_id', updatedProfile['id'] ?? '');
+
                   print('profile_completed dans le profil récupéré: ${updatedProfile['profile_completed']}');
                 }
                 print('===============================================');
@@ -90,7 +90,7 @@ class _ProfessionalCompleteProfileScreenState extends State<ProfessionalComplete
                     MaterialPageRoute(
                       builder: (context) => ProfessionalNavScreen(
                         token: token,
-                        profile: updatedProfile,
+                        profile: updatedProfile ?? formData,
                       ),
                     ),
                   );

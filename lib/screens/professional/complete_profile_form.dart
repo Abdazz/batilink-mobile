@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:form_field_validator/form_field_validator.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-
+import 'dart:io';
 
 class CompleteProfileForm extends StatefulWidget {
   final Map<String, dynamic>? initialData;
@@ -24,7 +24,7 @@ class CompleteProfileForm extends StatefulWidget {
 
 class _CompleteProfileFormState extends State<CompleteProfileForm> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  
+
   // Contrôleurs pour les champs du formulaire
   final TextEditingController _companyNameCtrl = TextEditingController();
   final TextEditingController _rccmNumberCtrl = TextEditingController();
@@ -39,16 +39,17 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
   final TextEditingController _maxPriceCtrl = TextEditingController();
   final TextEditingController _radiusKmCtrl = TextEditingController();
   final TextEditingController _experienceYearsCtrl = TextEditingController();
-  
+
   // Variables d'état
   bool _isAvailable = true;
   String? _idDocumentPath;
   String? _idDocumentName;
+  String? _profilePhotoPath;
+  String? _profilePhotoName;
   bool _isUploading = false;
   List<Map<String, dynamic>> _skills = [];
   final TextEditingController _skillNameCtrl = TextEditingController();
   String? _selectedLevel;
-  bool _isLoadingSkills = false;
 
   Future<void> _pickDocument() async {
     try {
@@ -73,26 +74,49 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
     }
   }
 
+  Future<void> _pickProfilePhoto() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png'],
+      );
+
+      if (result != null) {
+        setState(() {
+          _profilePhotoPath = result.files.single.path!;
+          _profilePhotoName = result.files.single.name;
+        });
+      }
+    } catch (e) {
+      print('Erreur lors de la sélection de la photo: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Erreur lors de la sélection de la photo')),
+        );
+      }
+    }
+  }
+
   Future<Map<String, String>> _uploadDocument() async {
     if (_idDocumentPath == null) return {};
 
     try {
       setState(() => _isUploading = true);
-      
+
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('http://10.0.2.2:8000/api/upload'), // Remplacez par votre endpoint d'upload
+        Uri.parse('http://10.0.2.2:8000/api/upload'),
       );
-      
+
       request.files.add(await http.MultipartFile.fromPath(
         'document',
         _idDocumentPath!,
         filename: _idDocumentName,
       ));
-      
+
       final response = await request.send();
       final responseData = await response.stream.bytesToString();
-      
+
       if (response.statusCode == 200) {
         return {'id_document_path': jsonDecode(responseData)['path']};
       } else {
@@ -107,7 +131,10 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
       }
     }
   }
-  
+
+  // Méthode d'upload de photo (non utilisée actuellement - la photo est envoyée directement dans le formulaire)
+  // Cette méthode peut être utilisée si un endpoint d'upload spécifique est créé côté serveur
+
   // Horaires d'ouverture par défaut (9h-18h du lundi au vendredi)
   final Map<String, Map<String, String>> _businessHours = <String, Map<String, String>>{
     'lundi': <String, String>{'open': '09:00', 'close': '18:00'},
@@ -118,10 +145,10 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
     'samedi': <String, String>{'open': '', 'close': ''}, // Fermé par défaut
     'dimanche': <String, String>{'open': '', 'close': ''}, // Fermé par défaut
   };
-  
+
   // Niveaux de compétence (affichage)
   static const List<String> _skillLevelsDisplay = <String>['Débutant', 'Intermédiaire', 'Avancé', 'Expert'];
-  
+
   // Mappage des niveaux de compétence vers les valeurs attendues par l'API
   final Map<String, String> _skillLevelsMap = {
     'Débutant': 'beginner',
@@ -154,7 +181,7 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
       _experienceYearsCtrl.text = widget.initialData!['experienceYears']?.toString() ?? '';
       _isAvailable = widget.initialData!['isAvailable'] ?? true;
       _skills = List<Map<String, dynamic>>.from(widget.initialData!['skills'] ?? []);
-      
+
       // Mettre à jour les horaires d'ouverture si disponibles
       if (widget.initialData!['businessHours'] != null) {
         final Map<String, dynamic> savedHours = widget.initialData!['businessHours'];
@@ -168,16 +195,15 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
     }
   }
 
-
   void _addSkill() {
     final skillName = _skillNameCtrl.text.trim();
     if (skillName.isEmpty || _selectedLevel == null) return;
-    
+
     setState(() {
       _skills.add({
         'name': skillName,
         'slug': skillName.toLowerCase().replaceAll(' ', '-'),
-        'level': _skillLevelsMap[_selectedLevel!] ?? 'beginner', // Utiliser la valeur mappée pour l'API
+        'level': _skillLevelsMap[_selectedLevel!] ?? 'beginner',
         'experience_years': int.tryParse(_experienceYearsCtrl.text) ?? 1,
       });
       _skillNameCtrl.clear();
@@ -190,7 +216,7 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
       _skills.removeAt(index);
     });
   }
-  
+
   @override
   void dispose() {
     _skillNameCtrl.dispose();
@@ -278,7 +304,6 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
   }
 
   String _getBusinessHoursJson() {
-    // Convertir le Map en chaîne JSON
     return jsonEncode(_businessHours);
   }
 
@@ -293,18 +318,29 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
 
     try {
       setState(() => _isUploading = true);
-      
+
       Map<String, String> uploadedFiles = {};
-      
+
       // Utilisation d'un document par défaut si activé
       if (USE_DEFAULT_DOCUMENT) {
-        // Utilisation du document par défaut (pour les tests)
-        uploadedFiles = {'id_document_path': DEFAULT_DOCUMENT_PATH};
+        uploadedFiles['id_document_path'] = DEFAULT_DOCUMENT_PATH;
         print('Utilisation du document par défaut: $DEFAULT_DOCUMENT_PATH');
-      } 
+      }
       // Sinon, upload du document personnalisé s'il est sélectionné
       else if (_idDocumentPath != null) {
-        uploadedFiles = await _uploadDocument();
+        try {
+          final docUpload = await _uploadDocument();
+          uploadedFiles.addAll(docUpload);
+          print('Document uploadé avec succès');
+        } catch (e) {
+          print('Erreur lors de l\'upload du document: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Erreur lors de l\'upload du document: $e')),
+            );
+          }
+          return;
+        }
       }
 
       final Map<String, dynamic> formData = {
@@ -324,13 +360,18 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
         'is_available': _isAvailable,
         'skills': _skills,
         'business_hours': _getBusinessHoursJson(),
-        'profile_completed': true, // Marquer le profil comme complet lors de la soumission
-        ...uploadedFiles, // Ajoute le chemin du document
+        'profile_completed': true,
+        ...uploadedFiles,
       };
+
+      // Ajouter la photo de profil directement (pas d'upload séparé)
+      if (_profilePhotoPath != null) {
+        formData['profile_photo'] = _profilePhotoPath;
+      }
 
       print('Données du formulaire: $formData');
       widget.onSubmit(formData);
-      
+
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -344,7 +385,6 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     return Form(
@@ -354,6 +394,89 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
+            // Section Photo de profil
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Photo de profil (optionnel)',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(40),
+                            border: Border.all(color: Colors.grey[400]!, width: 2),
+                          ),
+                          child: _profilePhotoPath != null
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(38),
+                                  child: Image.file(
+                                    File(_profilePhotoPath!),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return const Icon(Icons.person, size: 40, color: Colors.grey);
+                                    },
+                                  ),
+                                )
+                              : const Icon(Icons.person, size: 40, color: Colors.grey),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ElevatedButton.icon(
+                                onPressed: _pickProfilePhoto,
+                                icon: const Icon(Icons.photo_camera, size: 16),
+                                label: Text(_profilePhotoPath != null ? 'Changer la photo' : 'Ajouter une photo'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _profilePhotoPath != null ? Colors.orange : Colors.blue,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                              if (_profilePhotoPath != null) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  _profilePhotoName ?? 'Photo sélectionnée',
+                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                ),
+                                const SizedBox(height: 4),
+                                TextButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _profilePhotoPath = null;
+                                      _profilePhotoName = null;
+                                    });
+                                  },
+                                  child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Formats acceptés : JPG, PNG (max 5MB)',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
             // Section Informations générales
             Card(
               child: Padding(
@@ -407,9 +530,9 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Section Document d'identité
             Card(
               child: Padding(
@@ -438,9 +561,9 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Section Compétences
             Card(
               child: Padding(
@@ -464,9 +587,9 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Section Coordonnées
             Card(
               child: Padding(
@@ -529,9 +652,9 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Section Tarification
             Card(
               child: Padding(
@@ -599,9 +722,9 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Section Expérience
             Card(
               child: Padding(
@@ -638,9 +761,9 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Section Téléchargement de documents
             Card(
               child: Padding(
@@ -700,9 +823,9 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Section Horaires d'ouverture
             Card(
               child: Padding(
@@ -720,9 +843,9 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             // Bouton de soumission
             ElevatedButton(
               onPressed: widget.isLoading ? null : _submitForm,
@@ -743,7 +866,7 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                       style: TextStyle(fontSize: 16),
                     ),
             ),
-            
+
             const SizedBox(height: 16),
           ],
         ),
@@ -769,7 +892,7 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
       itemBuilder: (context, index) {
         final skill = _skills[index];
         return ListTile(
-          title: Text(skill['skillName'] ?? ''),
+          title: Text(skill['name'] ?? ''),
           subtitle: Text('Niveau: ${skill['level'] ?? ''}'),
           trailing: IconButton(
             icon: const Icon(Icons.delete, color: Colors.red),
@@ -786,7 +909,7 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
       final String openTime = entry.value['open'] ?? '';
       final String closeTime = entry.value['close'] ?? '';
       final bool isClosed = openTime.isEmpty || closeTime.isEmpty;
-      
+
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -883,8 +1006,6 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
 // Extension pour formater l'heure
 extension TimeOfDayExtension on TimeOfDay {
   String format(BuildContext context) {
-    final now = DateTime.now();
-    final dt = DateTime(now.year, now.month, now.day, hour, minute);
     final format = MaterialLocalizations.of(context);
     return format.formatTimeOfDay(this);
   }
