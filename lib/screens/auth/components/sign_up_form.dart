@@ -77,7 +77,9 @@ class _SignUpFormState extends State<SignUpForm> {
             content: Text(
               role == 'professional' 
                 ? 'Votre compte professionnel doit être activé par un administrateur avant l\'accès au dashboard.'
-                : 'Votre compte client a été créé avec succès. Vous pouvez maintenant vous connecter.',
+                : (role == 'pro_client'
+                    ? 'Votre compte Pro-Client doit être activé par un administrateur avant l\'accès au dashboard.'
+                    : 'Votre compte client a été créé avec succès. Vous pouvez maintenant vous connecter.'),
             ),
             actions: [
               TextButton(

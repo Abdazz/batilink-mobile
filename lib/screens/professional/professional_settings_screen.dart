@@ -264,10 +264,10 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFFFCC00),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF4CAF50)),
+          icon: const Icon(Icons.arrow_back, color: Color(0xFFFFCC00)),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
@@ -281,11 +281,12 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFF4CAF50)),
+            icon: const Icon(Icons.refresh, color: Color(0xFFFFCC00)),
             onPressed: _loadProfessionalProfile,
           ),
         ],
       ),
+      backgroundColor: const Color(0xFFE5E5E5),
       body: _buildBody(),
     );
   }
@@ -320,7 +321,7 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
                 icon: const Icon(Icons.add),
                 label: const Text('Compléter mon profil'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4CAF50),
+                  backgroundColor: const Color(0xFFFFCC00),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -330,7 +331,7 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
               ElevatedButton(
                 onPressed: _loadProfessionalProfile,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4CAF50),
+                  backgroundColor: const Color(0xFFFFCC00),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -363,40 +364,6 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
             _buildInfoRow(Icons.star, 'Expérience', '${_profile['experience_years'] ?? 0} années'),
             _buildInfoRow(Icons.verified, 'Statut', _profile['is_available'] == true ? 'Disponible' : 'Indisponible'),
           ]),
-
-          const SizedBox(height: 16),
-
-          // Bouton Modifier le profil
-          Container(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () async {
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ProfessionalProfileEditScreen(
-                      token: widget.token,
-                      currentProfile: _profile,
-                    ),
-                  ),
-                );
-                if (result == true) {
-                  // Recharger le profil si les modifications ont été sauvegardées
-                  await _loadProfessionalProfile();
-                }
-              },
-              icon: const Icon(Icons.edit, size: 20),
-              label: const Text('Modifier le profil'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4CAF50),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ),
 
           const SizedBox(height: 24),
 
@@ -441,6 +408,21 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
 
           // Paramètres du compte
           _buildSection('Paramètres du compte', [
+            _buildSettingItem(Icons.edit, 'Modifier le profil', () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ProfessionalProfileEditScreen(
+                    token: widget.token,
+                    currentProfile: _profile,
+                  ),
+                ),
+              );
+              if (result == true) {
+                // Recharger le profil si les modifications ont été sauvegardées
+                await _loadProfessionalProfile();
+              }
+            }),
             _buildSettingItem(Icons.notifications, 'Notifications', () {}),
             _buildSettingItem(Icons.lock, 'Sécurité', () {}),
             _buildSettingItem(Icons.help, 'Aide & Support', () {}),
@@ -478,9 +460,9 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
             height: 80,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(0xFF4CAF50).withOpacity(0.1),
+              color: const Color(0xFFFFCC00).withOpacity(0.1),
               border: Border.all(
-                color: const Color(0xFF4CAF50),
+                color: const Color(0xFFFFCC00),
                 width: 3,
               ),
             ),
@@ -493,7 +475,7 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
                       errorBuilder: (context, error, stackTrace) {
                         return const Icon(
                           Icons.business,
-                          color: Color(0xFF4CAF50),
+                          color: Color(0xFFFFCC00),
                           size: 40,
                         );
                       },
@@ -501,7 +483,7 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
                   )
                 : const Icon(
                     Icons.business,
-                    color: Color(0xFF4CAF50),
+                    color: Color(0xFFFFCC00),
                     size: 40,
                   ),
           ),
@@ -523,7 +505,7 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
                   _profile['job_title'] ?? 'Métier non spécifié',
                   style: GoogleFonts.poppins(
                     fontSize: 18,
-                    color: const Color(0xFF4CAF50),
+                    color: const Color(0xFFFFCC00),
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -591,12 +573,12 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: const Color(0xFF4CAF50).withOpacity(0.1),
+              color: const Color(0xFFFFCC00).withOpacity(0.1),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
               icon,
-              color: const Color(0xFF4CAF50),
+              color: const Color(0xFFFFCC00),
               size: 20,
             ),
           ),
@@ -772,7 +754,7 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
               icon: const Icon(Icons.edit, size: 16),
               label: const Text('Modifier'),
               style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF4CAF50),
+                foregroundColor: const Color(0xFFFFCC00),
               ),
             ),
           ],
@@ -826,7 +808,7 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
                   icon: const Icon(Icons.schedule),
                   label: const Text('Définir mes horaires'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4CAF50),
+                    backgroundColor: const Color(0xFFFFCC00),
                     foregroundColor: Colors.white,
                   ),
                 ),
@@ -1064,7 +1046,7 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
               icon: const Icon(Icons.arrow_forward, size: 16),
               label: const Text('Gérer'),
               style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF4CAF50),
+                foregroundColor: const Color(0xFFFFCC00),
               ),
             ),
           ],
@@ -1111,7 +1093,7 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
                 icon: const Icon(Icons.add),
                 label: const Text('Gérer mes projets'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4CAF50),
+                  backgroundColor: const Color(0xFFFFCC00),
                   foregroundColor: Colors.white,
                 ),
               ),
@@ -1131,7 +1113,7 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
         border: Border.all(color: Colors.grey[200]!),
       ),
       child: ListTile(
-        leading: Icon(icon, color: const Color(0xFF4CAF50)),
+        leading: Icon(icon, color: const Color(0xFFFFCC00)),
         title: Text(
           title,
           style: GoogleFonts.poppins(

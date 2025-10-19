@@ -4,36 +4,36 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../../services/auth_service.dart';
-import 'client_dashboard_screen.dart';
-import 'professional_search_screen.dart';
-import 'client_completed_quotations_screen.dart';
 
-class ClientProfileScreen extends StatefulWidget {
+class ProClientProfileScreen extends StatefulWidget {
   final String token;
   final Map<String, dynamic> userData;
 
-  const ClientProfileScreen({
+  const ProClientProfileScreen({
     Key? key,
     required this.token,
     required this.userData,
   }) : super(key: key);
 
   @override
-  _ClientProfileScreenState createState() => _ClientProfileScreenState();
+  _ProClientProfileScreenState createState() => _ProClientProfileScreenState();
 }
 
-class _ClientProfileScreenState extends State<ClientProfileScreen> {
+class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
   Map<String, dynamic>? _userData;
+  Map<String, dynamic>? _professionalData;
   bool _isLoading = true;
   int _selectedIndex = 3; // Index pour l'onglet Profil
   String? _errorMessage;
   String _token = '';
 
-  // Statistiques du client
-  int _totalJobs = 0;
+  // Statistiques du pro-client
+  int _totalJobsAsClient = 0;
+  int _totalJobsAsProfessional = 0;
+  int _totalPendingQuotations = 0;
+  int _totalActiveJobs = 0;
   int _totalFavorites = 0;
-  int _totalReviews = 0;
+  int _totalReviewsReceived = 0;
 
   @override
   void initState() {
@@ -44,7 +44,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
   Future<void> _initializeData() async {
     // Récupérer le token depuis SharedPreferences comme secours
     final prefs = await SharedPreferences.getInstance();
-    final tokenFromPrefs = prefs.getString('access_token') ?? '';
+    final tokenFromPrefs = prefs.getString('token') ?? '';
 
     // Utiliser le token passé en argument, ou celui de SharedPreferences comme secours
     final finalToken = widget.token.isNotEmpty ? widget.token : tokenFromPrefs;
@@ -59,101 +59,89 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
       _token = finalToken;
     });
 
-    _loadUserProfile();
+    _loadProClientProfile();
   }
 
-  Future<void> _loadUserProfile() async {
+  Future<void> _loadProClientProfile() async {
     try {
-      final token = _token; // Utiliser le token récupéré depuis SharedPreferences
-      final authService = AuthService(baseUrl: 'http://10.0.2.2:8000');
-
-      if (token == null || token.isEmpty) {
+      final token = _token;
+      if (token.isEmpty) {
         _showError('Token d\'authentification manquant');
         return;
       }
 
-      print('=== DEBUG PROFIL CLIENT ===');
+      print('=== DEBUG PROFIL PRO-CLIENT ===');
       print('Token utilisé: ${token.substring(0, 20)}...');
-      print('Données utilisateur reçues lors du login: ${widget.userData}');
 
-      final response = await authService.getClientProfile(accessToken: token);
+      final response = await http.get(
+        Uri.parse('http://10.0.2.2:8000/api/pro-client/complete-profile'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
 
       print('Réponse reçue - Status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         print('Données décodées: $data');
-        print('Type des données: ${data.runtimeType}');
 
-        // Vérification de la structure de la réponse
-        if (data is Map<String, dynamic>) {
-          print('Clés disponibles dans la réponse: ${data.keys.toList()}');
+        if (data is Map<String, dynamic> && data.containsKey('data')) {
+          final profileData = data['data'];
+          print('Données de profil trouvées: $profileData');
 
-          if (data.containsKey('data')) {
-            final responseData = data['data'];
-            print('Données de réponse trouvées: $responseData');
-            print('Type des données de réponse: ${responseData.runtimeType}');
-
-            if (responseData is Map<String, dynamic>) {
-              print('Clés dans responseData: ${responseData.keys.toList()}');
-
-              // Extraire les données utilisateur depuis le champ 'user'
-              if (responseData.containsKey('user')) {
-                final userData = responseData['user'];
-                print('Données utilisateur extraites: $userData');
-                print('Type des données utilisateur: ${userData.runtimeType}');
-
-                if (userData is Map<String, dynamic>) {
-                  print('Clés utilisateur: ${userData.keys.toList()}');
-
-                  setState(() {
-                    _userData = userData;
-                    _isLoading = false;
-                  });
-
-                  print('Profil utilisateur chargé avec succès: ${_userData?['first_name']} ${_userData?['last_name']} - ${_userData?['email']}');
-
-                  // Mettre à jour les statistiques si elles sont disponibles dans responseData
-                  if (responseData.containsKey('stats')) {
-                    final stats = responseData['stats'];
-                    if (stats is Map<String, dynamic>) {
-                      setState(() {
-                        _totalJobs = stats['total_jobs'] ?? 0;
-                        _totalFavorites = stats['total_favorites'] ?? 0;
-                        _totalReviews = stats['total_reviews'] ?? 0;
-                      });
-                      print('Statistiques mises à jour: jobs=$_totalJobs, favorites=$_totalFavorites, reviews=$_totalReviews');
-                    }
-                  } else {
-                    // Si les statistiques ne sont pas dans la réponse du profil, essayer de les récupérer séparément
-                    _loadClientStats();
-                  }
-
-                  return;
-                } else {
-                  print('ERREUR: responseData["user"] n\'est pas un Map');
-                }
-              } else {
-                print('ERREUR: Clé "user" manquante dans responseData');
+          if (profileData is Map<String, dynamic>) {
+            // Extraire les données utilisateur
+            if (profileData.containsKey('user')) {
+              final userData = profileData['user'];
+              if (userData is Map<String, dynamic>) {
+                setState(() {
+                  _userData = userData;
+                });
               }
-            } else {
-              print('ERREUR: data["data"] n\'est pas un Map');
             }
-          } else {
-            print('ERREUR: Clé "data" manquante dans la réponse');
+
+            // Extraire les données professionnel
+            if (profileData.containsKey('professional')) {
+              final professionalData = profileData['professional'];
+              if (professionalData is Map<String, dynamic>) {
+                setState(() {
+                  _professionalData = professionalData;
+                });
+              }
+            }
+
+            // Extraire les statistiques
+            if (profileData.containsKey('stats')) {
+              final stats = profileData['stats'];
+              if (stats is Map<String, dynamic>) {
+                setState(() {
+                  _totalJobsAsClient = stats['total_jobs_as_client'] ?? 0;
+                  _totalJobsAsProfessional = stats['total_jobs_as_professional'] ?? 0;
+                  _totalPendingQuotations = stats['total_pending_quotations'] ?? 0;
+                  _totalActiveJobs = stats['total_active_jobs'] ?? 0;
+                  _totalFavorites = stats['total_favorites'] ?? 0;
+                  _totalReviewsReceived = stats['total_reviews_received'] ?? 0;
+                });
+              }
+            }
+
+            setState(() {
+              _isLoading = false;
+            });
+
+            print('Profil pro-client chargé avec succès');
+            return;
           }
-        } else {
-          print('ERREUR: Réponse n\'est pas un Map');
         }
 
-        // Si on arrive ici, c'est qu'il y a un problème avec la structure
         print('Problème avec la structure de la réponse API');
         _showError('Format de réponse inattendu du serveur');
         return;
       } else {
         print('Échec API - Status: ${response.statusCode}');
         print('Corps de l\'erreur: ${response.body}');
-        // Afficher une erreur au lieu d'utiliser des données de test
         setState(() {
           _errorMessage = 'Erreur lors de la récupération du profil (${response.statusCode})';
           _isLoading = false;
@@ -161,45 +149,12 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         return;
       }
     } catch (e) {
-      print('Exception lors du chargement du profil: $e');
-      // Afficher une erreur au lieu d'utiliser des données de test
+      print('Exception lors du chargement du profil pro-client: $e');
       setState(() {
         _errorMessage = 'Erreur de connexion lors du chargement du profil';
         _isLoading = false;
       });
       return;
-    }
-  }
-
-  Future<void> _loadClientStats() async {
-    try {
-      final token = _token;
-      if (token.isEmpty) return;
-
-      final response = await http.get(
-        Uri.parse('http://10.0.2.2:8000/api/client/stats'),
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data is Map<String, dynamic> && data.containsKey('data')) {
-          final stats = data['data'];
-          if (stats is Map<String, dynamic>) {
-            setState(() {
-              _totalJobs = stats['total_jobs'] ?? 0;
-              _totalFavorites = stats['total_favorites'] ?? 0;
-              _totalReviews = stats['total_reviews'] ?? 0;
-            });
-            print('Statistiques client récupérées: jobs=$_totalJobs, favorites=$_totalFavorites, reviews=$_totalReviews');
-          }
-        }
-      }
-    } catch (e) {
-      print('Erreur lors du chargement des statistiques: $e');
     }
   }
 
@@ -222,37 +177,26 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
     switch (index) {
       case 0: // Accueil
-        Navigator.pushReplacement(
+        Navigator.pushNamedAndRemoveUntil(
           context,
-          MaterialPageRoute(
-            builder: (context) => ClientDashboardScreen(
-              token: widget.token,
-              userData: widget.userData,
-              profile: {},
-            ),
-          ),
+          '/pro-client/dashboard',
+          (route) => false,
         );
         break;
-      case 1: // Recherche
-        Navigator.pushReplacement(
+      case 1: // Mode Client
+        Navigator.pushNamedAndRemoveUntil(
           context,
-          MaterialPageRoute(
-            builder: (context) => ProfessionalSearchScreen(
-              token: widget.token,
-              userData: widget.userData,
-            ),
-          ),
+          '/pro-client/dashboard',
+          (route) => false,
+          arguments: {'initialTab': 1},
         );
         break;
-      case 2: // Mes devis
-        Navigator.pushReplacement(
+      case 2: // Mode Professionnel
+        Navigator.pushNamedAndRemoveUntil(
           context,
-          MaterialPageRoute(
-            builder: (context) => ClientCompletedQuotationsScreen(
-              token: widget.token,
-              userData: widget.userData,
-            ),
-          ),
+          '/pro-client/dashboard',
+          (route) => false,
+          arguments: {'initialTab': 2},
         );
         break;
       case 3: // Profil (page actuelle)
@@ -262,9 +206,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
   Future<void> _logout() async {
     try {
-      // Supprimer toutes les données locales (comme dans le profil professionnel)
       final prefs = await SharedPreferences.getInstance();
-      await prefs.clear(); // Vider toutes les préférences
+      await prefs.clear();
 
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(
@@ -290,7 +233,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Mon Profil',
+          'Mon Profil Pro-Client',
           style: GoogleFonts.poppins(
             fontSize: 20,
             fontWeight: FontWeight.w600,
@@ -299,7 +242,6 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         ),
         backgroundColor: const Color(0xFFFFCC00),
         elevation: 0,
-        // Enlever le bouton retour
         automaticallyImplyLeading: false,
       ),
       body: _isLoading
@@ -308,7 +250,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                 color: Color(0xFFFFCC00),
               ),
             )
-          : _userData == null
+          : _userData == null && _professionalData == null
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -328,7 +270,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                       ),
                       const SizedBox(height: 16),
                       ElevatedButton(
-                        onPressed: _loadUserProfile,
+                        onPressed: _loadProClientProfile,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFFFCC00),
                           foregroundColor: Colors.white,
@@ -356,6 +298,14 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
                       const SizedBox(height: 24),
 
+                      // Section Profil professionnel
+                      if (_professionalData != null) ...[
+                        _buildSectionTitle('Profil professionnel'),
+                        const SizedBox(height: 12),
+                        _buildProfessionalCard(),
+                        const SizedBox(height: 24),
+                      ],
+
                       // Section Actions rapides
                       _buildSectionTitle('Actions rapides'),
                       const SizedBox(height: 12),
@@ -363,14 +313,14 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
                       const SizedBox(height: 24),
 
-                      // Section Statistiques (optionnel)
+                      // Section Statistiques
                       _buildSectionTitle('Activité'),
                       const SizedBox(height: 12),
                       _buildStatsCard(),
 
                       const SizedBox(height: 32),
 
-                      // Bouton de déconnexion (en bas)
+                      // Bouton de déconnexion
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
@@ -407,15 +357,15 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
             label: 'Accueil',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.search),
-            label: 'Recherche',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.receipt_long),
-            label: 'Mes devis',
-          ),
-          BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),
+            label: 'Client',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.work_outline),
+            label: 'Professionnel',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.account_circle),
             label: 'Profil',
           ),
         ],
@@ -515,11 +465,48 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
             const SizedBox(height: 16),
 
             // Informations détaillées
-            _buildInfoRow('Rôle', _getRoleDisplayName(_userData?['role'])),
+            _buildInfoRow('Rôle', 'Pro-Client'),
             if (_userData?['created_at'] != null) ...[
               const SizedBox(height: 8),
               _buildInfoRow('Membre depuis', _formatDate(_userData!['created_at'])),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfessionalCard() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.business_center, color: const Color(0xFFFFCC00)),
+                const SizedBox(width: 8),
+                Text(
+                  'Profil professionnel',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFFFFCC00),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _buildInfoRow('Entreprise', _professionalData?['company_name'] ?? 'Non définie'),
+            const SizedBox(height: 8),
+            _buildInfoRow('Poste', _professionalData?['job_title'] ?? 'Non défini'),
+            const SizedBox(height: 8),
+            _buildInfoRow('Statut', _getProfessionalStatusText(_professionalData?['status'])),
           ],
         ),
       ),
@@ -557,12 +544,12 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
     return Column(
       children: [
         _buildActionButton(
-          icon: Icons.request_quote,
-          title: 'Mes demandes de devis',
-          subtitle: 'Voir toutes vos demandes et leurs réponses',
+          icon: Icons.add_business,
+          title: 'Créer une demande de devis',
+          subtitle: 'Trouvez des professionnels pour vos projets',
           onTap: () => Navigator.pushNamed(
             context,
-            '/client/quotations',
+            '/pro-client/create-quotation',
             arguments: {
               'token': widget.token,
               'userData': widget.userData,
@@ -571,12 +558,12 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         ),
         const SizedBox(height: 8),
         _buildActionButton(
-          icon: Icons.favorite,
-          title: 'Mes professionnels favoris',
-          subtitle: 'Accéder rapidement à vos professionnels préférés',
+          icon: Icons.inbox,
+          title: 'Mes devis reçus',
+          subtitle: 'Consulter les propositions des professionnels',
           onTap: () => Navigator.pushNamed(
             context,
-            '/client/favorites',
+            '/pro-client/quotations',
             arguments: {
               'token': widget.token,
               'userData': widget.userData,
@@ -585,12 +572,26 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         ),
         const SizedBox(height: 8),
         _buildActionButton(
-          icon: Icons.settings,
-          title: 'Paramètres du profil',
-          subtitle: 'Modifier vos informations personnelles',
+          icon: Icons.work,
+          title: 'Mes jobs actifs',
+          subtitle: 'Suivre l\'avancement de vos projets',
           onTap: () => Navigator.pushNamed(
             context,
-            '/client/profile/edit',
+            '/pro-client/client-jobs',
+            arguments: {
+              'token': widget.token,
+              'userData': widget.userData,
+            },
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildActionButton(
+          icon: Icons.reply,
+          title: 'Répondre aux devis',
+          subtitle: 'Proposer vos services aux clients',
+          onTap: () => Navigator.pushNamed(
+            context,
+            '/pro-client/respond-quotations',
             arguments: {
               'token': widget.token,
               'userData': widget.userData,
@@ -674,12 +675,25 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
+        child: Column(
           children: [
-            _buildStatItem(_totalJobs.toString(), 'Devis envoyés'),
-            _buildStatItem(_totalFavorites.toString(), 'Professionnels favoris'),
-            _buildStatItem(_totalReviews.toString(), 'Projets terminés'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildStatItem(_totalJobsAsClient.toString(), 'Jobs Client'),
+                _buildStatItem(_totalJobsAsProfessional.toString(), 'Jobs Pro'),
+                _buildStatItem(_totalPendingQuotations.toString(), 'Devis en attente'),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildStatItem(_totalActiveJobs.toString(), 'Jobs actifs'),
+                _buildStatItem(_totalFavorites.toString(), 'Favoris'),
+                _buildStatItem(_totalReviewsReceived.toString(), 'Avis reçus'),
+              ],
+            ),
           ],
         ),
       ),
@@ -709,14 +723,16 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
     );
   }
 
-  String _getRoleDisplayName(String? role) {
-    switch (role) {
-      case 'client':
-        return 'Client';
-      case 'professional':
-        return 'Professionnel';
+  String _getProfessionalStatusText(String? status) {
+    switch (status) {
+      case 'approved':
+        return 'Approuvé';
+      case 'pending':
+        return 'En attente';
+      case 'rejected':
+        return 'Rejeté';
       default:
-        return role ?? 'Utilisateur';
+        return 'Non défini';
     }
   }
 

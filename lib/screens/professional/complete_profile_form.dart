@@ -10,12 +10,14 @@ class CompleteProfileForm extends StatefulWidget {
   final Map<String, dynamic>? initialData;
   final Function(Map<String, dynamic>) onSubmit;
   final bool isLoading;
+  final bool isProClient;
 
   const CompleteProfileForm({
     Key? key,
     this.initialData,
     required this.onSubmit,
     this.isLoading = false,
+    this.isProClient = false,
   }) : super(key: key);
 
   @override
@@ -364,9 +366,21 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
         ...uploadedFiles,
       };
 
-      // Ajouter la photo de profil directement (pas d'upload séparé)
+      // Ajouter la photo de profil en base64 si elle existe
       if (_profilePhotoPath != null) {
-        formData['profile_photo'] = _profilePhotoPath;
+        try {
+          final File imageFile = File(_profilePhotoPath!);
+          final imageBytes = await imageFile.readAsBytes();
+          final base64Image = base64Encode(imageBytes);
+          formData['profile_photo'] = 'data:image/jpeg;base64,$base64Image';
+        } catch (e) {
+          print('Erreur lors de la conversion de l\'image en base64: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Erreur lors du traitement de la photo: $e')),
+            );
+          }
+        }
       }
 
       print('Données du formulaire: $formData');

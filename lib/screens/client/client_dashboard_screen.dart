@@ -201,7 +201,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: const Color(0xFFE5E5E5),
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.white,
@@ -278,7 +278,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
           setState(() => _selectedIndex = index);
         },
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFF4CAF50),
+        selectedItemColor: const Color(0xFFFFCC00),
         unselectedItemColor: Colors.grey,
         items: const [
           BottomNavigationBarItem(
@@ -386,7 +386,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
             'Favoris',
             '0', // TODO: Récupérer depuis l'API quand disponible
             Icons.favorite,
-            const Color(0xFFE91E63),
+            const Color(0xFFFFCC00),
           ),
         ),
       ],
@@ -459,7 +459,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
               child: Text(
                 'Voir tout',
                 style: GoogleFonts.poppins(
-                  color: const Color(0xFF4CAF50),
+                  color: const Color(0xFFFFCC00),
                   fontSize: 14,
                 ),
               ),
@@ -572,7 +572,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
                       );
                     },
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFF4CAF50)),
+                      side: const BorderSide(color: Color(0xFFFFCC00)),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -580,7 +580,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
                     child: Text(
                       'Voir devis',
                       style: GoogleFonts.poppins(
-                        color: const Color(0xFF4CAF50),
+                        color: const Color(0xFFFFCC00),
                       ),
                     ),
                   ),
@@ -640,7 +640,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
               child: Text(
                 'Voir tout',
                 style: GoogleFonts.poppins(
-                  color: const Color(0xFF4CAF50),
+                  color: const Color(0xFFFFCC00),
                   fontSize: 14,
                 ),
               ),
@@ -684,7 +684,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
               child: Text(
                 'Voir tout',
                 style: GoogleFonts.poppins(
-                  color: const Color(0xFF4CAF50),
+                  color: const Color(0xFFFFCC00),
                   fontSize: 14,
                 ),
               ),
@@ -731,7 +731,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
                                   ? Text(
                                       '${professional.firstName[0]}${professional.lastName[0]}',
                                       style: const TextStyle(
-                                          fontSize: 24, color: Color(0xFF4CAF50)),
+                                          fontSize: 24, color: Color(0xFFFFCC00)),
                                     )
                                   : null,
                             ),
@@ -805,7 +805,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
                               );
                             },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF4CAF50),
+                              backgroundColor: const Color(0xFFFFCC00),
                               padding: const EdgeInsets.symmetric(vertical: 6),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),

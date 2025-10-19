@@ -31,43 +31,285 @@ class ProfessionalSearchScreen extends StatefulWidget {
 class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
   int _selectedIndex = 1; // Index 1 pour l'onglet de recherche
 
+  // Variable pour stocker le rôle détecté
+  bool _isProClient = false;
+  bool _isRoleDetectionComplete = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    _loadProfessionals();
+    _detectUserRole();
+  }
+
+  // Détecter le rôle de l'utilisateur de manière asynchrone
+  Future<void> _detectUserRole() async {
+    print('=== DEBUG DÉTECTION RÔLE (DÉBUT) ===');
+    print('widget.userData: ${widget.userData}');
+    print('widget.token: ${widget.token}');
+    print('_isProClient avant détection: $_isProClient');
+    print('_isRoleDetectionComplete avant détection: $_isRoleDetectionComplete');
+
+    try {
+      // D'abord essayer les données passées en argument
+      final userData = widget.userData;
+      
+      // Vérifier si userData est null
+      if (userData == null) {
+        print('userData est null');
+      } else {
+        print('userData contient les clés: ${userData.keys}');
+      }
+      print('userData reçu: $userData');
+
+      bool isPro = _isProClient; // Conserver la valeur actuelle par défaut
+      
+      if (userData != null && userData.isNotEmpty) {
+        print('userData n\'est pas vide, vérification...');
+
+        // Vérifier si le rôle est directement dans userData
+        if (userData.containsKey('role')) {
+          print('Rôle trouvé dans userData: ${userData['role']}');
+          if (userData['role'] == 'pro_client') {
+            print('Rôle pro_client détecté directement dans userData');
+            isPro = true;
+          } else {
+            print('Rôle différent de pro_client: ${userData['role']}');
+            isPro = false;
+          }
+        } 
+        // Vérifier la structure imbriquée data.user.role
+        else if (userData.containsKey('data') && 
+                 userData['data'] is Map &&
+                 userData['data'].containsKey('user') &&
+                 userData['data']['user'] is Map &&
+                 userData['data']['user'].containsKey('role')) {
+          final role = userData['data']['user']['role'];
+          print('Rôle trouvé dans userData.data.user: $role');
+          if (role == 'pro_client') {
+            print('Rôle pro_client détecté dans userData.data.user.role');
+            isPro = true;
+          } else {
+            print('Rôle différent de pro_client: $role');
+            isPro = false;
+          }
+        }
+        // Vérifier la structure imbriquée user.role
+        else if (userData.containsKey('user') && 
+                 userData['user'] is Map && 
+                 userData['user'].containsKey('role')) {
+          final role = userData['user']['role'];
+          print('Rôle trouvé dans userData.user: $role');
+          if (role == 'pro_client') {
+            print('Rôle pro_client détecté dans userData.user.role');
+            isPro = true;
+          } else {
+            print('Rôle différent de pro_client: $role');
+            isPro = false;
+          }
+        } else {
+          print('Aucun rôle trouvé dans les données utilisateur');
+          isPro = false;
+        }
+      } else {
+        print('userData est vide ou null, vérification dans SharedPreferences...');
+        // Essayer de récupérer depuis SharedPreferences
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final userDataString = prefs.getString('user_data');
+          
+          if (userDataString != null && userDataString.isNotEmpty) {
+            final userDataPrefs = json.decode(userDataString) as Map<String, dynamic>;
+            print('Données utilisateur depuis SharedPreferences: $userDataPrefs');
+            
+            // Vérifier le rôle dans les données du SharedPreferences
+            if (userDataPrefs.containsKey('role') && userDataPrefs['role'] == 'pro_client') {
+              print('Rôle pro_client détecté dans SharedPreferences');
+              isPro = true;
+            } 
+            // Vérifier la structure imbriquée user.role
+            else if (userDataPrefs.containsKey('user') && 
+                     userDataPrefs['user'] is Map && 
+                     (userDataPrefs['user'] as Map).containsKey('role') &&
+                     userDataPrefs['user']['role'] == 'pro_client') {
+              print('Rôle pro_client détecté dans SharedPreferences.user.role');
+              isPro = true;
+            }
+            // Vérifier la structure imbriquée data.user.role
+            else if (userDataPrefs.containsKey('data') && 
+                     userDataPrefs['data'] is Map &&
+                     (userDataPrefs['data'] as Map).containsKey('user') &&
+                     userDataPrefs['data']['user'] is Map &&
+                     (userDataPrefs['data']['user'] as Map).containsKey('role') &&
+                     userDataPrefs['data']['user']['role'] == 'pro_client') {
+              print('Rôle pro_client détecté dans SharedPreferences.data.user.role');
+              isPro = true;
+            } else {
+              print('Aucun rôle pro_client trouvé dans les données de SharedPreferences');
+              isPro = false;
+            }
+          } else {
+            print('Aucune donnée utilisateur trouvée dans SharedPreferences');
+            isPro = false;
+          }
+        } catch (e) {
+          print('Erreur lors de la lecture des données utilisateur depuis SharedPreferences: $e');
+          isPro = false;
+        }
+      }
+
+      // Mettre à jour l'état une seule fois
+      if (mounted) {
+        print('Mise à jour de l\'état:');
+        print('  Ancienne valeur _isProClient: $_isProClient');
+        print('  Nouvelle valeur _isProClient: $isPro');
+        print('  _isRoleDetectionComplete: true');
+        
+        setState(() {
+          _isProClient = isPro;
+          _isRoleDetectionComplete = true;
+        });
+        
+        // Vérifier les valeurs après le setState
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          print('=== APRÈS SETSTATE ===');
+          print('_isProClient après setState: $_isProClient');
+          print('_isRoleDetectionComplete après setState: $_isRoleDetectionComplete');
+          
+          // Forcer un rebuild après la détection du rôle
+          if (mounted) {
+            setState(() {});
+          }
+        });
+      } else {
+        print('Widget non monté, impossible de mettre à jour l\'état');
+      }
+    } catch (e) {
+      print('Erreur lors de la détection du rôle: $e');
+      if (mounted) {
+        setState(() {
+          _isProClient = false;
+          _isRoleDetectionComplete = true;
+        });
+      }
+    }
+    
+    print('=== FIN DÉTECTION RÔLE ===');
+    print('_isProClient: $_isProClient');
+    print('_isRoleDetectionComplete: $_isRoleDetectionComplete');
+    print('Stack trace:');
+    print(StackTrace.current.toString().split('\n').take(5).join('\n'));
+  }
+
   void _onItemTapped(int index) {
     if (index == _selectedIndex) return;
 
-    if (index == 0) {
-      // Naviguer vers le tableau de bord
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ClientDashboardScreen(
-            token: widget.token ?? '',
-            userData: widget.userData ?? <String, dynamic>{},
-            profile: {},
+    print('=== DEBUG NAVIGATION ===');
+    print('Index cliqué: $index');
+    print('Index actuel: $_selectedIndex');
+    print('_isProClient: $_isProClient');
+    print('_isRoleDetectionComplete: $_isRoleDetectionComplete');
+    
+    // Si la détection du rôle n'est pas terminée, ne pas naviguer
+    if (!_isRoleDetectionComplete) {
+      print('Détection du rôle en cours, navigation différée');
+      return;
+    }
+
+    // Mettre à jour l'index sélectionné
+    setState(() {
+      _selectedIndex = index;
+    });
+
+    // Pour les pro-clients, ne pas naviguer automatiquement depuis l'écran de recherche
+    // La navigation se fera uniquement si l'utilisateur clique sur un autre onglet
+    if (_isProClient) {
+      print('Navigation pour pro-client');
+      if (index != 1) { // Ne pas naviguer si on est déjà sur la recherche (index 1)
+        _navigateForProClient(index);
+      }
+    } else {
+      print('Navigation pour client');
+      _navigateForClient(index);
+    }
+  }
+
+  void _navigateForProClient(int index) {
+    print('=== NAVIGATION PRO CLIENT ===');
+    print('Index de navigation: $index');
+    
+    // Toujours forcer l'index 1 (Recherche) à rester sur cette page
+    if (index == 1) {
+      print('Déjà sur la page de recherche');
+      return;
+    }
+
+    // Pour les autres onglets, naviguer vers le dashboard avec l'onglet approprié
+    final tabIndex = index == 0 ? 0 : index - 1; // Ajuster l'index pour le dashboard
+    print('Navigation vers le dashboard avec l\'onglet: $tabIndex');
+    
+    Navigator.pushReplacementNamed(
+      context,
+      '/pro-client/dashboard',
+      arguments: {
+        'token': widget.token ?? '',
+        'userData': widget.userData ?? <String, dynamic>{},
+        'initialTab': tabIndex,
+      },
+    );
+  }
+
+  void _navigateForClient(int index) {
+    print('=== NAVIGATION CLIENT STANDARD ===');
+    print('Index de navigation: $index');
+    
+    // Si on est déjà sur la page de recherche (index 1), ne rien faire
+    if (index == 1) {
+      print('Déjà sur la page de recherche');
+      return;
+    }
+
+    switch (index) {
+      case 0: // Tableau de bord
+        print('Navigation vers le tableau de bord client');
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ClientDashboardScreen(
+              token: widget.token ?? '',
+              userData: widget.userData ?? <String, dynamic>{},
+              profile: {},
+            ),
           ),
-        ),
-      );
-    } else if (index == 2) {
-      // Naviguer vers mes devis
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ClientCompletedQuotationsScreen(
-            token: widget.token,
-            userData: widget.userData,
+        );
+        break;
+        
+      case 2: // Mes devis
+        print('Navigation vers les devis du client');
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ClientCompletedQuotationsScreen(
+              token: widget.token ?? '',
+              userData: widget.userData ?? <String, dynamic>{},
+            ),
           ),
-        ),
-      );
-    } else if (index == 3) {
-      // Naviguer vers le profil
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ClientProfileScreen(
-            token: widget.token ?? '',
-            userData: widget.userData ?? <String, dynamic>{},
+        );
+        break;
+        
+      case 3: // Profil
+        print('Navigation vers le profil client');
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ClientProfileScreen(
+              token: widget.token ?? '',
+              userData: widget.userData ?? <String, dynamic>{},
+            ),
           ),
-        ),
-      );
+        );
+        break;
     }
   }
 
@@ -86,13 +328,6 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
   bool _availableNow = false;
   String _sortBy = 'relevance';
   bool _showFilters = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_onScroll);
-    _loadProfessionals();
-  }
 
   @override
   void dispose() {
@@ -129,7 +364,7 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
       String? token = widget.token;
       if (token == null || token.isEmpty) {
         final prefs = await SharedPreferences.getInstance();
-        token = prefs.getString('access_token');
+        token = prefs.getString('token'); // ← Utiliser 'token' au lieu de 'access_token'
       }
 
       if (token == null || token.isEmpty) {
@@ -295,7 +530,7 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
       String? token = widget.token;
       if (token == null || token.isEmpty) {
         final prefs = await SharedPreferences.getInstance();
-        token = prefs.getString('access_token');
+        token = prefs.getString('token'); // ← Utiliser 'token' au lieu de 'access_token'
       }
 
       if (token == null || token.isEmpty) {
@@ -364,6 +599,22 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    print('=== DEBUG BUILD ===');
+    print('_isProClient: $_isProClient (${_isProClient.runtimeType})');
+    print('_isRoleDetectionComplete: $_isRoleDetectionComplete (${_isRoleDetectionComplete.runtimeType})');
+    print('widget.token: ${widget.token}');
+    print('widget.userData: ${widget.userData}');
+    
+    // Afficher la pile d'appels pour comprendre d'où vient le build
+    print('Stack trace:');
+    print(StackTrace.current.toString().split('\n').take(5).join('\n'));
+    
+    // Vérifier si le widget est toujours monté
+    if (!mounted) {
+      print('Widget non monté, retourne un conteneur vide');
+      return Container();
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -384,7 +635,7 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
           ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(80),
+          preferredSize: const Size.fromHeight(350),
           child: Padding(
             padding: const EdgeInsets.all(8.0),
             child: Column(
@@ -399,7 +650,7 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
                       borderSide: BorderSide.none,
                     ),
                     filled: true,
-                    fillColor: Colors.grey[200],
+                    fillColor: const Color(0xFFFFCC00).withOpacity(0.1),
                     contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
                     suffixIcon: _searchController.text.isNotEmpty
                         ? IconButton(
@@ -413,171 +664,209 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
                   ),
                   onSubmitted: (_) => _loadProfessionals(reset: true),
                 ),
-                if (_showFilters) _buildFilters(),
+                if (_showFilters) Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.2),
+                        spreadRadius: 1,
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: 200,
+                    ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Filtres',
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  decoration: const InputDecoration(
+                                    labelText: 'Métier',
+                                    border: OutlineInputBorder(),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                    isDense: true,
+                                  ),
+                                  onChanged: (value) => _selectedProfession = value,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  decoration: const InputDecoration(
+                                    labelText: 'Localisation',
+                                    border: OutlineInputBorder(),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                    isDense: true,
+                                  ),
+                                  onChanged: (value) => _location = value,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Note minimale: ${_minRating.toInt()}+',
+                                      style: GoogleFonts.poppins(fontSize: 12),
+                                    ),
+                                    RatingBar.builder(
+                                      initialRating: _minRating,
+                                      minRating: 0,
+                                      direction: Axis.horizontal,
+                                      allowHalfRating: false,
+                                      itemCount: 5,
+                                      itemSize: 16,
+                                      itemBuilder: (context, _) => const Icon(
+                                        Icons.star,
+                                        color: Colors.amber,
+                                      ),
+                                      onRatingUpdate: (rating) {
+                                        setState(() {
+                                          _minRating = rating;
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Trier par:'),
+                                    DropdownButton<String>(
+                                      value: _sortBy,
+                                      isDense: true,
+                                      items: const [
+                                        DropdownMenuItem(
+                                          value: 'relevance',
+                                          child: Text('Pertinence', style: TextStyle(fontSize: 12)),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: 'rating',
+                                          child: Text('Note', style: TextStyle(fontSize: 12)),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: 'distance',
+                                          child: Text('Distance', style: TextStyle(fontSize: 12)),
+                                        ),
+                                      ],
+                                      onChanged: (value) {
+                                        if (value != null) {
+                                          setState(() {
+                                            _sortBy = value;
+                                          });
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Checkbox(
+                                value: _availableNow,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _availableNow = value ?? false;
+                                  });
+                                },
+                              ),
+                              const Text('Disponible maintenant'),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: _resetFilters,
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                  ),
+                                  child: const Text('Réinitialiser'),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _applyFilters,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFFFCC00),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                  ),
+                                  child: const Text('Appliquer'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
         ),
       ),
       body: _buildBody(),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFF4CAF50),
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: 'Accueil',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search),
-            label: 'Recherche',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.receipt_long),
-            label: 'Mes devis',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            label: 'Profil',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilters() {
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.2),
-            spreadRadius: 1,
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Filtres',
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w600,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            decoration: const InputDecoration(
-              labelText: 'Métier',
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            ),
-            onChanged: (value) => _selectedProfession = value,
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            decoration: const InputDecoration(
-              labelText: 'Localisation',
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            ),
-            onChanged: (value) => _location = value,
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Text(
-                'Note minimale: ${_minRating.toInt()}+',
-                style: GoogleFonts.poppins(fontSize: 14),
-              ),
-              const SizedBox(width: 8),
-              RatingBar.builder(
-                initialRating: _minRating,
-                minRating: 0,
-                direction: Axis.horizontal,
-                allowHalfRating: false,
-                itemCount: 5,
-                itemSize: 20,
-                itemBuilder: (context, _) => const Icon(
-                  Icons.star,
-                  color: Colors.amber,
+      bottomNavigationBar: _isRoleDetectionComplete && !_isProClient
+          ? BottomNavigationBar(
+              currentIndex: _selectedIndex,
+              onTap: _onItemTapped,
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: const Color(0xFFE5E5E5),
+              selectedItemColor: const Color(0xFFFFCC00),
+              unselectedItemColor: Colors.grey,
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.dashboard),
+                  label: 'Accueil',
                 ),
-                onRatingUpdate: (rating) {
-                  setState(() {
-                    _minRating = rating;
-                  });
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Checkbox(
-                value: _availableNow,
-                onChanged: (value) {
-                  setState(() {
-                    _availableNow = value ?? false;
-                  });
-                },
-              ),
-              const Text('Disponible maintenant'),
-              const Spacer(),
-              DropdownButton<String>(
-                value: _sortBy,
-                items: const [
-                  DropdownMenuItem(
-                    value: 'relevance',
-                    child: Text('Pertinence'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'rating',
-                    child: Text('Meilleure note'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'distance',
-                    child: Text('Distance'),
-                  ),
-                ],
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() {
-                      _sortBy = value;
-                    });
-                  }
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _resetFilters,
-                  child: const Text('Réinitialiser'),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.search),
+                  label: 'Recherche',
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: _applyFilters,
-                  child: const Text('Appliquer'),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.receipt_long),
+                  label: 'Mes devis',
                 ),
-              ),
-            ],
-          ),
-        ],
-      ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.person_outline),
+                  label: 'Profil',
+                ),
+              ],
+            )
+          : null, // Hide navigation bar for pro clients and while role detection is in progress
     );
   }
 
@@ -774,14 +1063,14 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.green[50],
+                              color: const Color(0xFFFFCC00).withOpacity(0.1),
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.green[100]!),
+                              border: Border.all(color: const Color(0xFFFFCC00).withOpacity(0.3)),
                             ),
                             child: Text(
                               'Disponible',
                               style: GoogleFonts.poppins(
-                                color: Colors.green[800],
+                                color: const Color(0xFFFFCC00),
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
                               ),

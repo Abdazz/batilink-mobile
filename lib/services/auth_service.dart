@@ -195,16 +195,53 @@ class AuthService {
     return response;
   }
 
-  Future<http.Response> updateProfessionalProfile({
+  Future<http.Response> getProClientProfile({
+    required String accessToken,
+  }) async {
+    final url = Uri.parse('${effectiveBaseUrl}/api/pro-client/profile/me');
+    print('=== DEBUG - Récupération profil pro-client ===');
+    print('URL: $url');
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    );
+
+    print('Réponse profil pro-client: ${response.statusCode}');
+    print('Corps réponse profil pro-client: ${response.body}');
+    return response;
+  }
+
+  Future<http.Response> completeProClientProfile({
+    required String accessToken,
+    required Map<String, dynamic> payload,
+  }) async {
+    final url = Uri.parse('${effectiveBaseUrl}/api/pro-client/profile/complete');
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+      body: jsonEncode(payload),
+    );
+    return response;
+  }
+
+  Future<http.Response> updateProClientProfile({
     required String accessToken,
     required Map<String, dynamic> payload,
     String? profileId,
   }) async {
     final url = profileId != null && profileId.isNotEmpty
-        ? '${effectiveBaseUrl}/api/professional/profile/$profileId'
-        : '${effectiveBaseUrl}/api/professional/profile';
+        ? '${effectiveBaseUrl}/api/pro-client/profile/$profileId'
+        : '${effectiveBaseUrl}/api/pro-client/profile';
 
-    print('=== DEBUG UPDATE PROFILE ===');
+    print('=== DEBUG UPDATE PRO-CLIENT PROFILE ===');
     print('URL: $url');
     print('Profile ID: $profileId');
     print('Payload: $payload');
@@ -220,7 +257,7 @@ class AuthService {
       body: jsonEncode(payload),
     );
 
-    print('Réponse update profile: ${response.statusCode}');
+    print('Réponse update profil pro-client: ${response.statusCode}');
     print('Corps réponse: ${response.body}');
     return response;
   }
@@ -317,6 +354,43 @@ class AuthService {
   }
 
   Future<Map<String, dynamic>?> parseProfessionalProfileResponse(http.Response response) async {
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+
+      if (data['success'] == true && data['data'] != null) {
+        final profileData = data['data'];
+
+        // Nouvelle structure: data.data est un tableau
+        if (profileData is Map && profileData['data'] != null && (profileData['data'] as List).isNotEmpty) {
+          final profiles = profileData['data'] as List;
+
+          // Chercher le profil avec les données les plus récentes (pas par défaut)
+          for (var profile in profiles) {
+            if (profile is Map<String, dynamic>) {
+              final companyName = profile['company_name'] ?? '';
+              if (companyName != 'Entreprise par défaut' && companyName.isNotEmpty) {
+                return profile;
+              }
+            }
+          }
+
+          // Si pas trouvé, retourner le premier profil valide
+          for (var profile in profiles) {
+            if (profile is Map<String, dynamic> && profile['id'] != null) {
+              return profile;
+            }
+          }
+        }
+        // Ancienne structure: data est directement le profil
+        else if (profileData is Map<String, dynamic>) {
+          return profileData;
+        }
+      }
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> parseProClientProfileResponse(http.Response response) async {
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
 

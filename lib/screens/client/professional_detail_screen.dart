@@ -1091,7 +1091,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                                   label: const Text('Voir le devis associé'),
                                   onPressed: () => _navigateToQuotationDetails(quotationId.toString()),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF4CAF50),
+                                    backgroundColor: const Color(0xFFFFCC00),
                                     foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(vertical: 12),
                                     shape: RoundedRectangleBorder(
@@ -1282,7 +1282,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
         backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF4CAF50)),
+          icon: const Icon(Icons.arrow_back, color: Color(0xFFFFCC00)),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(

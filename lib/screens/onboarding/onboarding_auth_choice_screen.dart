@@ -51,6 +51,7 @@ class _OnboardingAuthChoiceScreenState extends State<OnboardingAuthChoiceScreen>
   Widget build(BuildContext context) {
     final String? roleArg = ModalRoute.of(context)?.settings.arguments as String? ?? widget.role;
     final bool isProfessional = roleArg == 'professional';
+    final bool isProClient = roleArg == 'pro_client';
 
     return Scaffold(
       body: Container(
@@ -135,14 +136,14 @@ class _OnboardingAuthChoiceScreenState extends State<OnboardingAuthChoiceScreen>
                                   ],
                                 ),
                                 child: Icon(
-                                  isProfessional ? Icons.engineering_outlined : Icons.person_outline,
+                                  isProfessional ? Icons.engineering_outlined : (isProClient ? Icons.people_outline : Icons.person_outline),
                                   size: 50,
                                   color: Colors.white,
                                 ),
                               ),
                               const SizedBox(height: 24),
                               Text(
-                                isProfessional ? "Espace Professionnel" : "Espace Client",
+                                isProfessional ? "Espace Professionnel" : (isProClient ? "Espace Pro-Client" : "Espace Client"),
                                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                                       fontWeight: FontWeight.bold,
                                       color: const Color(0xFF1976D2), // Bleu foncé
@@ -168,7 +169,9 @@ class _OnboardingAuthChoiceScreenState extends State<OnboardingAuthChoiceScreen>
                                 child: Text(
                                   isProfessional
                                       ? "Connectez-vous ou créez votre compte professionnel"
-                                      : "Connectez-vous ou créez votre compte client",
+                                      : (isProClient
+                                          ? "Connectez-vous ou créez votre compte Pro-Client"
+                                          : "Connectez-vous ou créez votre compte client"),
                                   style: const TextStyle(
                                     color: Color(0xFF1976D2),
                                     fontSize: 14,
@@ -201,6 +204,8 @@ class _OnboardingAuthChoiceScreenState extends State<OnboardingAuthChoiceScreen>
                             onTap: () {
                               if (isProfessional) {
                                 Navigator.pushNamed(context, '/login-professional');
+                              } else if (isProClient) {
+                                Navigator.pushNamed(context, '/login-pro-client');
                               } else {
                                 Navigator.pushNamed(context, '/client/login');
                               }
@@ -222,6 +227,8 @@ class _OnboardingAuthChoiceScreenState extends State<OnboardingAuthChoiceScreen>
                             onTap: () {
                               if (isProfessional) {
                                 Navigator.pushNamed(context, '/register-professional');
+                              } else if (isProClient) {
+                                Navigator.pushNamed(context, '/register-pro-client');
                               } else {
                                 Navigator.pushNamed(context, '/client/register');
                               }

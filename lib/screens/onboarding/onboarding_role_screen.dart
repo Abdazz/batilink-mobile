@@ -180,11 +180,26 @@ class _OnboardingRoleScreenState extends State<OnboardingRoleScreen>
                         _AnimatedRoleCard(
                           delay: 400,
                           child: _RoleCard(
+                            title: 'Pro-Client',
+                            subtitle: 'Client et professionnel en un',
+                            icon: Icons.people_outline,
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF42A5F5), Color(0xFF1E88E5)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            onTap: () => Navigator.pushNamed(context, '/auth-choice', arguments: 'pro_client'),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        _AnimatedRoleCard(
+                          delay: 600,
+                          child: _RoleCard(
                             title: 'Professionnel',
                             subtitle: 'Proposez vos services',
                             icon: Icons.engineering_outlined,
                             gradient: const LinearGradient(
-                              colors: [Color(0xFF42A5F5), Color(0xFF1E88E5)],
+                              colors: [Color(0xFF64B5F6), Color(0xFF1976D2)],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),

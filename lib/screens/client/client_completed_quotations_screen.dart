@@ -330,7 +330,7 @@ class _ClientCompletedQuotationsScreenState extends State<ClientCompletedQuotati
                     style: GoogleFonts.poppins(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: const Color(0xFF4CAF50),
+                      color: const Color(0xFFFFCC00),
                     ),
                   ),
                 ] else ...[
@@ -439,7 +439,7 @@ class _ClientCompletedQuotationsScreenState extends State<ClientCompletedQuotati
                   child: Text(
                     professional['company_name']?[0]?.toUpperCase() ?? 'N',
                     style: GoogleFonts.poppins(
-                      color: const Color(0xFF4CAF50),
+                      color: const Color(0xFFFFCC00),
                       fontWeight: FontWeight.w600,
                       fontSize: 18,
                     ),
@@ -459,7 +459,7 @@ class _ClientCompletedQuotationsScreenState extends State<ClientCompletedQuotati
               child: Text(
                 professional['company_name']?[0]?.toUpperCase() ?? 'N',
                 style: GoogleFonts.poppins(
-                  color: const Color(0xFF4CAF50),
+                  color: const Color(0xFFFFCC00),
                   fontWeight: FontWeight.w600,
                   fontSize: 18,
                 ),
@@ -490,7 +490,7 @@ class _ClientCompletedQuotationsScreenState extends State<ClientCompletedQuotati
             color: Colors.white,
           ),
         ),
-        backgroundColor: const Color(0xFF4CAF50),
+        backgroundColor: const Color(0xFFFFCC00),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -500,7 +500,7 @@ class _ClientCompletedQuotationsScreenState extends State<ClientCompletedQuotati
       body: _isLoading
           ? const Center(
               child: CircularProgressIndicator(
-                color: Color(0xFF4CAF50),
+                color: Color(0xFFFFCC00),
               ),
             )
           : _errorMessage != null
@@ -527,7 +527,7 @@ class _ClientCompletedQuotationsScreenState extends State<ClientCompletedQuotati
                         onPressed: _loadQuotations,
                         child: Text('Réessayer'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF4CAF50),
+                          backgroundColor: const Color(0xFFFFCC00),
                         ),
                       ),
                     ],
@@ -537,7 +537,7 @@ class _ClientCompletedQuotationsScreenState extends State<ClientCompletedQuotati
                   ? _buildEmptyState()
                   : RefreshIndicator(
                       onRefresh: _loadQuotations,
-                      color: const Color(0xFF4CAF50),
+                      color: const Color(0xFFFFCC00),
                       child: ListView.builder(
                         padding: const EdgeInsets.all(16),
                         itemCount: _filteredQuotations.length,
@@ -551,7 +551,7 @@ class _ClientCompletedQuotationsScreenState extends State<ClientCompletedQuotati
         currentIndex: _selectedIndex,
         onTap: _onNavigationTap,
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFF4CAF50),
+        selectedItemColor: const Color(0xFFFFCC00),
         unselectedItemColor: Colors.grey,
         items: const [
           BottomNavigationBarItem(
