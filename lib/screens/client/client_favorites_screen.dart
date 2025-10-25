@@ -1,9 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_service.dart';
+import '../../core/app_config.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'professional_detail_screen.dart';
@@ -43,7 +42,7 @@ class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
     print('Token depuis prefs: ${tokenFromPrefs.isNotEmpty ? tokenFromPrefs.substring(0, 20) + '...' : 'VIDE'}');
 
     // Utiliser le token passé en argument s'il n'est pas vide, sinon utiliser celui de SharedPreferences
-    final finalToken = (widget.token?.isNotEmpty ?? false) ? widget.token! : tokenFromPrefs;
+    final finalToken = widget.token.isNotEmpty ? widget.token : tokenFromPrefs;
 
     if (finalToken.isEmpty) {
       _showError('Token d\'authentification manquant. Veuillez vous reconnecter.');
@@ -61,41 +60,26 @@ class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
 
   Future<void> _loadFavorites() async {
     try {
-      // Utiliser le token récupéré depuis SharedPreferences comme secours
-      final token = _token;
-
       print('=== DEBUG FAVORITES ===');
       print('Token utilisé: ${_token.isNotEmpty ? _token.substring(0, 20) + '...' : 'VIDE'}');
 
-      if (token.isEmpty) {
+      if (_token.isEmpty) {
         _showError('Token d\'authentification manquant');
         return;
       }
 
-      print('URL appelée: ${ApiService.baseUrl}/api/favorites/professionals');
+      print('URL appelée: ${AppConfig.baseUrl}/api/favorites/professionals');
 
-      final response = await http.get(
-        Uri.parse('${ApiService.baseUrl}/api/favorites/professionals'),
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
+      final data = await ApiService.get('favorites/professionals');
 
-      print('Code de statut: ${response.statusCode}');
-      print('Corps de la réponse: ${response.body}');
+      print('Données reçues: $data');
+      print('Type de data: ${data.runtimeType}');
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        print('Données reçues: $data');
-        print('Type de data: ${data.runtimeType}');
-
-        if (data is Map<String, dynamic>) {
-          print('Clés disponibles: ${data.keys.toList()}');
-          final favoritesData = data['data'];
-          print('Données favoris: $favoritesData');
-          print('Type des données favoris: ${favoritesData.runtimeType}');
-        }
+      if (data is Map<String, dynamic>) {
+        print('Clés disponibles: ${data.keys.toList()}');
+        final favoritesData = data['data'];
+        print('Données favoris: $favoritesData');
+        print('Type des données favoris: ${favoritesData.runtimeType}');
 
         setState(() {
           _favorites = data['data'] ?? [];
@@ -103,8 +87,7 @@ class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
         });
         print('Nombre de favoris chargés: ${_favorites.length}');
       } else {
-        print('Erreur HTTP ${response.statusCode}: ${response.body}');
-        _showError('Erreur lors du chargement des favoris (${response.statusCode})');
+        _showError('Format de réponse inattendu');
       }
     } catch (e) {
       print('Exception lors du chargement des favoris: $e');
@@ -114,27 +97,19 @@ class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
 
   Future<void> _removeFromFavorites(String professionalId) async {
     try {
-      // Utiliser le token récupéré depuis SharedPreferences comme secours
-      final token = _token;
-
-      if (token.isEmpty) {
+      if (_token.isEmpty) {
         _showError('Token d\'authentification manquant');
         return;
       }
 
-      final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/api/favorites/professionals/toggle'),
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({
+      final response = await ApiService.post(
+        'favorites/professionals/toggle',
+        data: {
           'professional_id': professionalId,
-        }),
+        },
       );
 
-      if (response.statusCode == 200) {
+      if (response['success'] == true) {
         setState(() {
           _favorites.removeWhere((fav) => fav['id'] == professionalId);
         });
@@ -166,6 +141,7 @@ class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
     }
   }
 
+
   Widget _getProfessionalPhoto(Map<String, dynamic> professional) {
     // Essaie d'extraire l'URL de la photo depuis différentes sources possibles
     String? avatarUrl;
@@ -189,8 +165,7 @@ class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
     if (avatarUrl != null && avatarUrl.isNotEmpty) {
       if (!avatarUrl.startsWith('http://') && !avatarUrl.startsWith('https://')) {
         if (avatarUrl.startsWith('/storage/') || avatarUrl.startsWith('storage/')) {
-          final cleanPath = avatarUrl.startsWith('/') ? avatarUrl.substring(1) : avatarUrl;
-          avatarUrl = 'http://10.0.2.2:8000/$cleanPath';
+          avatarUrl = AppConfig.buildMediaUrl(avatarUrl.startsWith('/') ? avatarUrl : '/$avatarUrl');
         }
       }
     }
@@ -225,7 +200,7 @@ class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
                   child: Text(
                     professional['company_name']?[0]?.toUpperCase() ?? 'N',
                     style: GoogleFonts.poppins(
-                      color: const Color(0xFF4CAF50),
+                      color: const Color(0xFFFFCC00),
                       fontWeight: FontWeight.w600,
                       fontSize: 24,
                     ),
@@ -245,7 +220,7 @@ class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
               child: Text(
                 professional['company_name']?[0]?.toUpperCase() ?? 'N',
                 style: GoogleFonts.poppins(
-                  color: const Color(0xFF4CAF50),
+                  color: const Color(0xFFFFCC00),
                   fontWeight: FontWeight.w600,
                   fontSize: 24,
                 ),
@@ -276,14 +251,14 @@ class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
       body: _isLoading
           ? const Center(
               child: CircularProgressIndicator(
-                color: Color(0xFF4CAF50),
+                color: const Color(0xFF4CAF50),
               ),
             )
           : _favorites.isEmpty
               ? _buildEmptyState()
               : RefreshIndicator(
                   onRefresh: _loadFavorites,
-                  color: const Color(0xFF4CAF50),
+                  color: const Color(0xFFFFCC00),
                   child: ListView.builder(
                     padding: const EdgeInsets.all(16),
                     itemCount: _favorites.length,

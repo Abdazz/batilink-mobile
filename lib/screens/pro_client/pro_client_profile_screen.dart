@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../core/app_config.dart';
 
 class ProClientProfileScreen extends StatefulWidget {
   final String token;
@@ -20,7 +21,6 @@ class ProClientProfileScreen extends StatefulWidget {
 }
 
 class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
-  Map<String, dynamic>? _userData;
   Map<String, dynamic>? _professionalData;
   bool _isLoading = true;
   int _selectedIndex = 3; // Index pour l'onglet Profil
@@ -74,7 +74,7 @@ class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
       print('Token utilisé: ${token.substring(0, 20)}...');
 
       final response = await http.get(
-        Uri.parse('http://10.0.2.2:8000/api/pro-client/complete-profile'),
+        Uri.parse('${AppConfig.baseUrl}/api/professional/profile/me'),
         headers: {
           'Authorization': 'Bearer $token',
           'Accept': 'application/json',
@@ -87,51 +87,49 @@ class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
         final data = json.decode(response.body);
         print('Données décodées: $data');
 
-        if (data is Map<String, dynamic> && data.containsKey('data')) {
-          final profileData = data['data'];
-          print('Données de profil trouvées: $profileData');
+        if (data is Map<String, dynamic>) {
+          print('=== DEBUG STRUCTURE API PRO-CLIENT ===');
+          print('Clés disponibles dans la réponse: ${data.keys}');
 
-          if (profileData is Map<String, dynamic>) {
-            // Extraire les données utilisateur
-            if (profileData.containsKey('user')) {
-              final userData = profileData['user'];
-              if (userData is Map<String, dynamic>) {
-                setState(() {
-                  _userData = userData;
-                });
-              }
-            }
+          // L'API /api/professional/profile/me retourne directement les données du professionnel
+          Map<String, dynamic>? profileData;
 
-            // Extraire les données professionnel
-            if (profileData.containsKey('professional')) {
-              final professionalData = profileData['professional'];
-              if (professionalData is Map<String, dynamic>) {
-                setState(() {
-                  _professionalData = professionalData;
-                });
-              }
+          // Si la structure contient 'data', utilise data
+          if (data.containsKey('data')) {
+            final apiData = data['data'];
+            if (apiData is Map<String, dynamic>) {
+              profileData = apiData;
             }
+          } else {
+            // Si pas de 'data', utilise directement le contenu (structure alternative)
+            profileData = data;
+          }
 
-            // Extraire les statistiques
-            if (profileData.containsKey('stats')) {
-              final stats = profileData['stats'];
-              if (stats is Map<String, dynamic>) {
-                setState(() {
-                  _totalJobsAsClient = stats['total_jobs_as_client'] ?? 0;
-                  _totalJobsAsProfessional = stats['total_jobs_as_professional'] ?? 0;
-                  _totalPendingQuotations = stats['total_pending_quotations'] ?? 0;
-                  _totalActiveJobs = stats['total_active_jobs'] ?? 0;
-                  _totalFavorites = stats['total_favorites'] ?? 0;
-                  _totalReviewsReceived = stats['total_reviews_received'] ?? 0;
-                });
-              }
-            }
+          print('Données de profil pro-client finales: $profileData');
+
+          if (profileData != null && profileData.isNotEmpty) {
+            final finalProfileData = profileData;
+
+            // Les données sont directement dans finalProfileData
+            setState(() {
+              _professionalData = finalProfileData;
+            });
+
+            // Pour pro-client, on utilise les données directement depuis le profil professionnel
+            setState(() {
+              _totalJobsAsClient = finalProfileData['total_jobs_as_client'] ?? 0;
+              _totalJobsAsProfessional = finalProfileData['total_jobs_as_professional'] ?? finalProfileData['completed_jobs'] ?? 0;
+              _totalPendingQuotations = finalProfileData['total_pending_quotations'] ?? 0;
+              _totalActiveJobs = finalProfileData['total_active_jobs'] ?? 0;
+              _totalFavorites = finalProfileData['total_favorites'] ?? 0;
+              _totalReviewsReceived = finalProfileData['total_reviews_received'] ?? 0;
+            });
 
             setState(() {
               _isLoading = false;
             });
 
-            print('Profil pro-client chargé avec succès');
+            print('Profil pro-client chargé avec succès depuis API /api/professional/profile/me');
             return;
           }
         }
@@ -250,7 +248,7 @@ class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
                 color: Color(0xFFFFCC00),
               ),
             )
-          : _userData == null && _professionalData == null
+          : _professionalData == null || (_professionalData?.isEmpty ?? true)
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -408,12 +406,14 @@ class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
                       width: 2,
                     ),
                   ),
-                  child: _userData?['avatar'] != null
+                  child: _professionalData?['profile_photo'] != null || _professionalData?['avatar'] != null
                       ? ClipOval(
                           child: CachedNetworkImage(
-                            imageUrl: _userData!['avatar'],
+                            imageUrl: (_professionalData?['profile_photo'] as Map<String, dynamic>?)?['url'] ?? _professionalData?['avatar'] ?? '',
                             fit: BoxFit.cover,
-                            placeholder: (context, url) => const CircularProgressIndicator(),
+                            placeholder: (context, url) => const CircularProgressIndicator(
+                              color: Color(0xFFFFCC00),
+                            ),
                             errorWidget: (context, url, error) => const Icon(
                               Icons.person,
                               color: Color(0xFFFFCC00),
@@ -433,23 +433,23 @@ class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${_userData?['first_name'] ?? ''} ${_userData?['last_name'] ?? ''}'.trim(),
+                        _professionalData?['company_name'] ?? 'Entreprise non définie',
                         style: GoogleFonts.poppins(
                           fontSize: 20,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       Text(
-                        _userData?['email'] ?? '',
+                        _professionalData?['email'] ?? 'Email non défini',
                         style: GoogleFonts.poppins(
                           color: Colors.grey[600],
                           fontSize: 14,
                         ),
                       ),
-                      if (_userData?['phone'] != null) ...[
+                      if (_professionalData?['phone'] != null || _professionalData?['phone_number'] != null) ...[
                         const SizedBox(height: 4),
                         Text(
-                          _userData!['phone'],
+                          _professionalData?['phone'] ?? _professionalData?['phone_number'] ?? '',
                           style: GoogleFonts.poppins(
                             color: Colors.grey[600],
                             fontSize: 14,
@@ -466,9 +466,9 @@ class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
 
             // Informations détaillées
             _buildInfoRow('Rôle', 'Pro-Client'),
-            if (_userData?['created_at'] != null) ...[
+            if (_professionalData?['created_at'] != null) ...[
               const SizedBox(height: 8),
-              _buildInfoRow('Membre depuis', _formatDate(_userData!['created_at'])),
+              _buildInfoRow('Membre depuis', _formatDate(_professionalData!['created_at'])),
             ],
           ],
         ),
@@ -482,35 +482,101 @@ class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.business_center, color: const Color(0xFFFFCC00)),
-                const SizedBox(width: 8),
-                Text(
-                  'Profil professionnel',
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFFFFCC00),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.pushNamed(
+          context,
+          '/pro-client/professional-profile',
+          arguments: {
+            'token': widget.token,
+            'userData': widget.userData,
+          },
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.business_center, color: const Color(0xFFFFCC00)),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Profil professionnel',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFFFFCC00),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _buildInfoRow('Entreprise', _professionalData?['company_name'] ?? 'Non définie'),
-            const SizedBox(height: 8),
-            _buildInfoRow('Poste', _professionalData?['job_title'] ?? 'Non défini'),
-            const SizedBox(height: 8),
-            _buildInfoRow('Statut', _getProfessionalStatusText(_professionalData?['status'])),
-          ],
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFCC00).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.arrow_forward_ios,
+                      color: const Color(0xFFFFCC00),
+                      size: 16,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _buildInfoRow('Entreprise', _professionalData?['company_name'] ?? 'Non définie'),
+              const SizedBox(height: 8),
+              _buildInfoRow('Poste', _professionalData?['job_title'] ?? 'Non défini'),
+              const SizedBox(height: 8),
+              _buildInfoRow('Statut', _getProfessionalStatusText(_professionalData?['status'])),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Spacer(),
+                  _getStatusBadge(_professionalData?['status']),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  Widget _getStatusBadge(String? status) {
+    final statusText = _getProfessionalStatusText(status);
+    final statusColor = _getStatusColor(status ?? '');
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: statusColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: statusColor),
+      ),
+      child: Text(
+        statusText,
+        style: GoogleFonts.poppins(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          color: statusColor,
+        ),
+      ),
+    );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'approved':
+        return const Color(0xFF4CAF50); // Vert pour approuvé
+      case 'pending':
+        return const Color(0xFFFFCC00); // Jaune pour en attente
+      case 'rejected':
+        return const Color(0xFFF44336); // Rouge pour rejeté
+      default:
+        return Colors.grey;
+    }
   }
 
   Widget _buildInfoRow(String label, String value) {
@@ -523,7 +589,7 @@ class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
             '$label:',
             style: GoogleFonts.poppins(
               fontWeight: FontWeight.w500,
-              color: Colors.grey[600],
+              color: const Color(0xFF1E3A5F),
               fontSize: 14,
             ),
           ),
@@ -543,19 +609,19 @@ class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
   Widget _buildActionButtons() {
     return Column(
       children: [
-        _buildActionButton(
-          icon: Icons.add_business,
-          title: 'Créer une demande de devis',
-          subtitle: 'Trouvez des professionnels pour vos projets',
-          onTap: () => Navigator.pushNamed(
-            context,
-            '/pro-client/create-quotation',
-            arguments: {
-              'token': widget.token,
-              'userData': widget.userData,
-            },
-          ),
-        ),
+        // _buildActionButton(
+        //   icon: Icons.add_business,
+        //   title: 'Créer une demande de devis',
+        //   subtitle: 'Trouvez des professionnels pour vos projets',
+        //   onTap: () => Navigator.pushNamed(
+        //     context,
+        //     '/pro-client/create-quotation',
+        //     arguments: {
+        //       'token': widget.token,
+        //       'userData': widget.userData,
+        //     },
+        //   ),
+        // ),
         const SizedBox(height: 8),
         _buildActionButton(
           icon: Icons.inbox,
@@ -586,12 +652,12 @@ class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
         ),
         const SizedBox(height: 8),
         _buildActionButton(
-          icon: Icons.reply,
-          title: 'Répondre aux devis',
-          subtitle: 'Proposer vos services aux clients',
+          icon: Icons.business_center,
+          title: 'Profil professionnel complet',
+          subtitle: 'Voir tous les détails, horaires, documents',
           onTap: () => Navigator.pushNamed(
             context,
-            '/pro-client/respond-quotations',
+            '/pro-client/professional-profile',
             arguments: {
               'token': widget.token,
               'userData': widget.userData,

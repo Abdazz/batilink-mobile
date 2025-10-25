@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:form_field_validator/form_field_validator.dart';
+import 'core/app_config.dart';
 
-// API Configuration
-const String apiBaseUrl = 'http://10.0.2.2:8000/api';
+// API Configuration - maintenant centralisée dans AppConfig
+// Getter pour accéder à la configuration centralisée
+String get apiBaseUrl => AppConfig.apiBaseUrl;
+String get mediaBaseUrl => AppConfig.mediaBaseUrl;
+String get baseUrl => AppConfig.baseUrl;
 
 // Colors
 const primaryColor = Color(0xFF255ED6);

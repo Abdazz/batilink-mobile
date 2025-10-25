@@ -1,11 +1,11 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/professional.dart';
+import '../../services/api_service.dart';
+import '../../core/app_config.dart';
 import '../unified_quotation_detail_screen.dart' as unified_screen;
 import 'quote_request_screen.dart';
 
@@ -106,10 +106,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
     try {
       print('Chargement des données pour le professionnel: ${widget.professionalId}');
 
-      const baseUrl = 'http://10.0.2.2:8000';
-      final professionalUrl = '$baseUrl/api/professionals/${widget.professionalId}';
-
-      print('Tentative de connexion à: $professionalUrl');
+      print('Tentative de connexion à: ${AppConfig.baseUrl}/api/professionals/${widget.professionalId}');
 
       // Récupérer le token d'authentification depuis les paramètres ou SharedPreferences
       final token = widget.token ?? await _getTokenFromPrefs();
@@ -122,26 +119,15 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
         return;
       }
 
-      final response = await http.get(
-        Uri.parse(professionalUrl),
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      ).timeout(const Duration(seconds: 10));
+      final data = await ApiService.get('professionals/${widget.professionalId}');
 
-      print('Code de statut: ${response.statusCode}');
+      print('Données reçues: $data');
 
-      if (response.statusCode == 200) {
-        print('Réponse reçue: ${response.body}');
-
-        final responseData = json.decode(utf8.decode(response.bodyBytes));
-
+      if (data != null) {
         // Structure de réponse pour les détails du professionnel
-        final Map<String, dynamic> data = responseData is Map<String, dynamic> ? responseData : {};
-        final Map<String, dynamic> professionalData = data['data'] is Map<String, dynamic>
-            ? data['data'] as Map<String, dynamic>
+        final Map<String, dynamic> responseData = data is Map<String, dynamic> ? data : {};
+        final Map<String, dynamic> professionalData = responseData['data'] is Map<String, dynamic>
+            ? responseData['data'] as Map<String, dynamic>
             : {};
 
         if (mounted) {
@@ -154,18 +140,11 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
         // Charger les détails supplémentaires si disponibles
         _loadReviews();
         _loadPortfolios();
-
       } else {
-        final error = jsonDecode(utf8.decode(response.bodyBytes));
-        final errorMessage = error['message'] ?? 'Échec du chargement du profil professionnel (${response.statusCode})';
-
-        if (response.statusCode == 401) {
-          throw Exception('Authentification requise. Veuillez vous reconnecter.');
-        } else if (response.statusCode == 404) {
-          throw Exception('Professionnel non trouvé. Vérifiez l\'identifiant.');
-        } else {
-          throw Exception(errorMessage);
-        }
+        setState(() {
+          _errorMessage = 'Erreur lors du chargement du profil professionnel';
+          _isLoading = false;
+        });
       }
 
     } catch (e) {
@@ -181,24 +160,16 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
 
   Future<void> _loadReviews() async {
     try {
-      final reviewsUrl = 'http://10.0.2.2:8000/api/professionals/${widget.professionalId}/reviews';
-      print('Chargement des avis depuis: $reviewsUrl');
+      print('Chargement des avis pour le professionnel: ${widget.professionalId}');
 
-      // Récupérer le token d'authentification depuis les paramètres ou SharedPreferences
-      final token = widget.token ?? await _getTokenFromPrefs();
+      final data = await ApiService.get('professionals/${widget.professionalId}/reviews');
 
-      final response = await http.get(
-        Uri.parse(reviewsUrl),
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-      );
+      print('Données des avis reçues: $data');
 
-      if (response.statusCode == 200) {
-        final responseData = json.decode(utf8.decode(response.bodyBytes));
-        final reviewsData = responseData is Map ? responseData['data'] ?? [] : [];
+      if (data != null) {
+        // Structure de réponse pour les avis
+        final Map<String, dynamic> responseData = data is Map<String, dynamic> ? data : {};
+        final reviewsData = responseData['data'] ?? [];
 
         if (mounted) {
           setState(() {
@@ -208,17 +179,14 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
 
         // Charger les détails des devis associés aux avis si disponibles
         _loadReviewQuotationDetails();
-
-      } else if (response.statusCode == 404 || response.statusCode == 500) {
-        // Endpoint non trouvé ou erreur serveur - utiliser une liste vide
-        print('Avis non disponibles pour ce professionnel (code: ${response.statusCode})');
+      } else {
+        // Pas d'avis disponibles
+        print('Aucun avis disponible pour ce professionnel');
         if (mounted) {
           setState(() {
             _reviews = [];
           });
         }
-      } else {
-        print('Erreur lors du chargement des avis: ${response.statusCode}');
       }
     } catch (e) {
       print('Erreur lors du chargement des avis: $e');
@@ -245,25 +213,12 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
         final quotationId = review['quotation_id'];
         if (quotationId != null) {
           try {
-            final quotationUrl = 'http://10.0.2.2:8000/api/quotations/$quotationId';
-            final response = await http.get(
-              Uri.parse(quotationUrl),
-              headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer $token',
-              },
-            );
+            final quotationData = await ApiService.get('quotations/$quotationId');
 
-            if (response.statusCode == 200) {
-              final responseData = json.decode(utf8.decode(response.bodyBytes));
-              final quotationData = responseData is Map ? responseData['data'] : null;
-
-              if (quotationData != null) {
-                setState(() {
-                  _reviewDetails[quotationId.toString()] = quotationData;
-                });
-              }
+            if (quotationData != null) {
+              setState(() {
+                _reviewDetails[quotationId.toString()] = quotationData;
+              });
             }
           } catch (e) {
             print('Erreur lors du chargement du devis ${quotationId}: $e');
@@ -279,24 +234,19 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
     try {
       // Endpoint pour récupérer les portfolios d'un professionnel
       // GET /api/professionals/{professionalId}/portfolios
-      final portfoliosUrl = 'http://10.0.2.2:8000/api/professionals/${widget.professionalId}/portfolios';
-      print('Chargement des portfolios depuis: $portfoliosUrl');
+      print('Chargement des portfolios pour le professionnel: ${widget.professionalId}');
 
       // Récupérer le token d'authentification depuis les paramètres ou SharedPreferences
       final token = widget.token ?? await _getTokenFromPrefs();
 
-      final response = await http.get(
-        Uri.parse(portfoliosUrl),
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-      );
+      final data = await ApiService.get('professionals/${widget.professionalId}/portfolios');
 
-      if (response.statusCode == 200) {
-        final responseData = json.decode(utf8.decode(response.bodyBytes));
-        final portfoliosData = responseData is Map ? responseData['data'] ?? [] : [];
+      print('Données des portfolios reçues: $data');
+
+      if (data != null) {
+        // Structure de réponse pour les portfolios
+        final Map<String, dynamic> responseData = data is Map<String, dynamic> ? data : {};
+        final portfoliosData = responseData['data'] ?? [];
 
         print('=== DEBUG PORTFOLIOS ===');
         print('Données reçues: $portfoliosData');
@@ -316,16 +266,9 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
           });
         }
         print('Portfolios chargés: ${_portfolios.length} éléments');
-      } else if (response.statusCode == 404 || response.statusCode == 500) {
-        // Endpoint non trouvé ou erreur serveur - utiliser une liste vide
-        print('Portfolios non disponibles pour ce professionnel (code: ${response.statusCode})');
-        if (mounted) {
-          setState(() {
-            _portfolios = [];
-          });
-        }
       } else {
-        print('Erreur lors du chargement des portfolios: ${response.statusCode}');
+        // Pas de portfolios disponibles
+        print('Aucun portfolio disponible pour ce professionnel');
         if (mounted) {
           setState(() {
             _portfolios = [];
@@ -404,20 +347,15 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                     return;
                   }
 
-                  final response = await http.post(
-                    Uri.parse('http://10.0.2.2:8000/api/professionals/${widget.professionalId}/reviews'),
-                    headers: {
-                      'Accept': 'application/json',
-                      'Content-Type': 'application/json',
-                      'Authorization': 'Bearer $token',
-                    },
-                    body: json.encode({
+                  final response = await ApiService.post(
+                    'professionals/${widget.professionalId}/reviews',
+                    data: {
                       'rating': rating,
                       'comment': commentController.text,
-                    }),
+                    },
                   );
 
-                  if (response.statusCode == 201) {
+                  if (response != null) {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
@@ -427,18 +365,10 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                       );
                       _loadReviews();
                     }
-                  } else if (response.statusCode == 401) {
+                  } else {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Authentification requise. Veuillez vous reconnecter.'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  } else {
-                    final error = jsonDecode(utf8.decode(response.bodyBytes));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Erreur: ${error['message'] ?? 'Erreur lors de l\'envoi de l\'avis'}'),
                         backgroundColor: Colors.red,
                       ),
                     );
@@ -578,8 +508,8 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            _professional?.address != null && _professional!.address!.isNotEmpty
-                                ? _professional!.address!
+                            _professional?.address != null && _professional!.address.isNotEmpty
+                                ? _professional!.address
                                 : 'Adresse non spécifiée',
                             style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
                           ),
@@ -622,7 +552,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                     ),
                   ],
                 ),
-                if (_professional?.radiusKm != null && _professional!.radiusKm! > 0) ...[
+                if (_professional?.radiusKm != null && _professional!.radiusKm > 0) ...[
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -677,7 +607,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
           const SizedBox(height: 24),
 
           // Compétences détaillées
-          if (_professional?.detailedSkills?.isNotEmpty == true) ...[
+          if (_professional?.detailedSkills.isNotEmpty == true) ...[
             Text(
               'Compétences',
               style: GoogleFonts.poppins(
@@ -892,7 +822,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        '${_professional?.rating?.toStringAsFixed(1) ?? '0.0'}/5',
+                        '${_professional?.rating.toStringAsFixed(1) ?? '0.0'}/5',
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -1130,7 +1060,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
         _buildInfoCard(
           icon: Icons.euro,
           title: 'Tarif horaire',
-          value: '${_professional?.hourlyRate?.toStringAsFixed(0) ?? '0'} €',
+          value: '${_professional?.hourlyRate.toStringAsFixed(0) ?? '0'} €',
           color: const Color(0xFFFFCC00),
         ),
         _buildInfoCard(
@@ -1149,7 +1079,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
           _buildInfoCard(
             icon: Icons.attach_money,
             title: 'Prix minimum',
-            value: '${_professional?.minPrice?.toStringAsFixed(0) ?? '0'} €',
+            value: '${_professional?.minPrice.toStringAsFixed(0) ?? '0'} €',
             color: const Color(0xFFFFCC00),
           ),
         ],
@@ -1157,11 +1087,11 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
           _buildInfoCard(
             icon: Icons.trending_up,
             title: 'Prix maximum',
-            value: '${_professional?.maxPrice?.toStringAsFixed(0) ?? '0'} €',
+            value: '${_professional?.maxPrice.toStringAsFixed(0) ?? '0'} €',
             color: const Color(0xFFFFCC00),
           ),
         ],
-        if (_professional?.radiusKm != null && _professional!.radiusKm! > 0) ...[
+        if (_professional?.radiusKm != null && _professional!.radiusKm > 0) ...[
           _buildInfoCard(
             icon: Icons.gps_fixed,
             title: 'Rayon d\'intervention',
@@ -1506,7 +1436,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFFCC00).withOpacity(0.1),
+                              color: const Color(0xFFFFCC00).withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(15),
                               border: Border.all(
                                 color: const Color(0xFFFFCC00),
@@ -1604,7 +1534,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
     if (imageUrl != null && imageUrl.isNotEmpty) {
       // Si l'URL ne commence pas par http, la compléter
       if (!imageUrl.startsWith('http')) {
-        return 'http://10.0.2.2:8000$imageUrl';
+        return AppConfig.buildMediaUrl(imageUrl);
       }
       return imageUrl;
     }
@@ -1667,33 +1597,21 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
         return;
       }
 
-      final response = await http.get(
-        Uri.parse('http://10.0.2.2:8000/api/quotations/$quotationId'),
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
+      final quotationData = await ApiService.get('quotations/$quotationId');
 
-      if (response.statusCode == 200) {
-        final responseData = json.decode(utf8.decode(response.bodyBytes));
-        final quotationData = responseData is Map ? responseData['data'] : null;
-
-        if (quotationData != null) {
-          // Naviguer vers l'écran des détails du devis avec les données récupérées
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => unified_screen.UnifiedQuotationDetailScreen(
-                quotationId: quotationId,
-                quotation: quotationData,
-                token: token,
-                context: unified_screen.QuotationContext.client,
-              ),
+      if (quotationData != null) {
+        // Naviguer vers l'écran des détails du devis avec les données récupérées
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => unified_screen.UnifiedQuotationDetailScreen(
+              quotationId: quotationId,
+              quotation: quotationData,
+              token: token,
+              context: unified_screen.QuotationContext.client,
             ),
-          );
-        }
+          ),
+        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../services/session_service.dart';
+import '../../core/app_config.dart';
 import '../professional/professional_complete_profile_screen.dart';
 
 class LoginProfessionalScreen extends StatefulWidget {
@@ -13,7 +14,7 @@ class LoginProfessionalScreen extends StatefulWidget {
 
 class _LoginProfessionalScreenState extends State<LoginProfessionalScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _authService = AuthService(baseUrl: 'http://10.0.2.2:8000');
+  final _authService = AuthService(baseUrl: AppConfig.baseUrl);
 
   String? _email, _password;
   bool _loading = false;

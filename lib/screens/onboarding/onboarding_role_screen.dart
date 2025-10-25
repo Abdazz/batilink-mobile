@@ -184,7 +184,7 @@ class _OnboardingRoleScreenState extends State<OnboardingRoleScreen>
                             subtitle: 'Client et professionnel en un',
                             icon: Icons.people_outline,
                             gradient: const LinearGradient(
-                              colors: [Color(0xFF42A5F5), Color(0xFF1E88E5)],
+                              colors: [Color(0xFF1E3A5F), Color(0xFF1E3A5F)],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),

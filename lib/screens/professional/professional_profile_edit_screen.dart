@@ -4,9 +4,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:form_field_validator/form_field_validator.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../services/api_service.dart';
+import '../../core/app_config.dart';
+import 'package:http/http.dart' as http;
 
 class ProfessionalProfileEditScreen extends StatefulWidget {
   final String token;
@@ -214,12 +216,12 @@ class _ProfessionalProfileEditScreenState extends State<ProfessionalProfileEditS
             });
           },
           backgroundColor: Colors.grey[100],
-          selectedColor: const Color(0xFF4CAF50).withOpacity(0.2),
-          checkmarkColor: const Color(0xFF4CAF50),
+          selectedColor: const Color(0xFFFFCC00).withOpacity(0.2),
+          checkmarkColor: const Color(0xFFFFCC00),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
             side: BorderSide(
-              color: isSelected ? const Color(0xFF4CAF50) : Colors.grey[300]!,
+              color: isSelected ? const Color(0xFFFFCC00) : Colors.grey[300]!,
             ),
           ),
         );
@@ -244,42 +246,34 @@ class _ProfessionalProfileEditScreenState extends State<ProfessionalProfileEditS
       print('Image encodée en base64, taille: ${base64Image.length} caractères');
       print('Nom du fichier: ${_profilePhotoName ?? 'profile_photo.jpg'}');
 
-      // Envoyer vers l'endpoint base64
-      final response = await http.post(
-        Uri.parse('http://10.0.2.2:8000/api/professional/profile-photo'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode({
+      // Envoyer vers l'endpoint base64 avec le bon token
+      final response = await ApiService.postWithToken(
+        'professional/profile-photo',
+        token: token,
+        data: {
           'profile_photo_base64': base64Image,
           'profile_photo_name': _profilePhotoName ?? 'profile_photo.jpg',
-        }),
+        },
       );
 
       print('=== DEBUG REQUEST ===');
-      print('URL: http://10.0.2.2:8000/api/professional/profile-photo');
-      print('Headers: {Authorization: Bearer $token, Content-Type: application/json, Accept: application/json}');
+      print('URL: ${AppConfig.baseUrl}/api/professional/profile-photo');
       print('Body envoyé: ${jsonEncode({
         'profile_photo_base64': base64Image.substring(0, 50) + '...',
         'profile_photo_name': _profilePhotoName ?? 'profile_photo.jpg',
       })}');
 
-      print('Réponse upload base64 - Status: ${response.statusCode}');
-      print('Réponse upload base64 - Body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
+      if (response != null) {
+        print('Réponse upload base64 - Body: $response');
         return {
           'success': true,
           'message': 'Photo uploadée avec succès',
-          'data': responseData,
+          'data': response,
         };
       } else {
         return {
           'success': false,
-          'message': 'Erreur serveur: ${response.statusCode} - ${response.body}',
+          'message': 'Erreur lors de l\'upload de la photo',
         };
       }
     } catch (e) {
@@ -422,19 +416,15 @@ class _ProfessionalProfileEditScreenState extends State<ProfessionalProfileEditS
 
       // Étape 1: Mettre à jour les autres champs normalement
       if (updatedFields.isNotEmpty) {
-        final response = await http.put(
-          Uri.parse('http://10.0.2.2:8000/api/professional/profile'),
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: jsonEncode(updatedFields),
+        final response = await ApiService.postWithToken(
+          'professional/profile',
+          token: token,
+          data: {...updatedFields, '_method': 'PUT'}, // Indiquer que c'est une mise à jour
         );
 
-        print('Réponse autres champs - Status: ${response.statusCode}');
-        if (response.statusCode != 200) {
-          print('Erreur mise à jour autres champs: ${response.body}');
+        print('Réponse autres champs - Status: ${response != null ? '200' : 'error'}');
+        if (response == null) {
+          print('Erreur mise à jour autres champs: Réponse nulle');
         }
       }
 
@@ -504,16 +494,16 @@ class _ProfessionalProfileEditScreenState extends State<ProfessionalProfileEditS
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFFFCC00),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF4CAF50)),
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
           'Modifier le profil',
           style: GoogleFonts.poppins(
-            color: Colors.black87,
+            color: Colors.white,
             fontSize: 20,
             fontWeight: FontWeight.w600,
           ),
@@ -535,13 +525,14 @@ class _ProfessionalProfileEditScreenState extends State<ProfessionalProfileEditS
               child: Text(
                 'Sauvegarder',
                 style: GoogleFonts.poppins(
-                  color: const Color(0xFF4CAF50),
+                  color: Colors.white,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
         ],
       ),
+      backgroundColor: const Color(0xFFE5E5E5),
       body: Form(
         key: _formKey,
         child: SingleChildScrollView(
@@ -549,6 +540,103 @@ class _ProfessionalProfileEditScreenState extends State<ProfessionalProfileEditS
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Section Photo de profil (déplacée en premier)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Photo de profil',
+                        style: GoogleFonts.poppins(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Container(
+                            width: 80,
+                            height: 80,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(40),
+                              border: Border.all(color: Colors.grey[400]!, width: 2),
+                            ),
+                            child: _profilePhotoPath != null
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(38),
+                                    child: Image.file(
+                                      File(_profilePhotoPath!),
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return const Icon(Icons.person, size: 40, color: Colors.grey);
+                                      },
+                                    ),
+                                  )
+                                : widget.currentProfile['profile_photo_url'] != null
+                                    ? ClipRRect(
+                                        borderRadius: BorderRadius.circular(38),
+                                        child: Image.network(
+                                          widget.currentProfile['profile_photo_url'],
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) {
+                                            return const Icon(Icons.person, size: 40, color: Colors.grey);
+                                          },
+                                        ),
+                                      )
+                                    : const Icon(Icons.person, size: 40, color: Colors.grey),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: _pickProfilePhoto,
+                                  icon: const Icon(Icons.photo_camera, size: 16),
+                                  label: Text(_profilePhotoPath != null ? 'Changer la photo' : 'Modifier la photo'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _profilePhotoPath != null ? Colors.orange : const Color(0xFFFFCC00),
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                                if (_profilePhotoPath != null) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    _profilePhotoName ?? 'Nouvelle photo sélectionnée',
+                                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  TextButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        _profilePhotoPath = null;
+                                        _profilePhotoName = null;
+                                      });
+                                    },
+                                    child: const Text('Annuler', style: TextStyle(color: Colors.red)),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Formats acceptés : JPG, PNG (max 5MB)',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
               // Section Informations générales
               Card(
                 child: Padding(
@@ -608,103 +696,6 @@ class _ProfessionalProfileEditScreenState extends State<ProfessionalProfileEditS
 
               const SizedBox(height: 16),
 
-              // Section Photo de profil
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Photo de profil',
-                        style: GoogleFonts.poppins(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Container(
-                            width: 80,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              color: Colors.grey[300],
-                              borderRadius: BorderRadius.circular(40),
-                              border: Border.all(color: Colors.grey[400]!, width: 2),
-                            ),
-                            child: _profilePhotoPath != null
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(38),
-                                    child: Image.file(
-                                      File(_profilePhotoPath!),
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return const Icon(Icons.person, size: 40, color: Colors.grey);
-                                      },
-                                    ),
-                                  )
-                                : widget.currentProfile['profile_photo_url'] != null
-                                    ? ClipRRect(
-                                        borderRadius: BorderRadius.circular(38),
-                                        child: Image.network(
-                                          widget.currentProfile['profile_photo_url'],
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (context, error, stackTrace) {
-                                            return const Icon(Icons.person, size: 40, color: Colors.grey);
-                                          },
-                                        ),
-                                      )
-                                    : const Icon(Icons.person, size: 40, color: Colors.grey),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                ElevatedButton.icon(
-                                  onPressed: _pickProfilePhoto,
-                                  icon: const Icon(Icons.photo_camera, size: 16),
-                                  label: Text(_profilePhotoPath != null ? 'Changer la photo' : 'Modifier la photo'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: _profilePhotoPath != null ? Colors.orange : Colors.blue,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                ),
-                                if (_profilePhotoPath != null) ...[
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    _profilePhotoName ?? 'Nouvelle photo sélectionnée',
-                                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        _profilePhotoPath = null;
-                                        _profilePhotoName = null;
-                                      });
-                                    },
-                                    child: const Text('Annuler', style: TextStyle(color: Colors.red)),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Formats acceptés : JPG, PNG (max 5MB)',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
               // Section Compétences
               Card(
                 child: Padding(
@@ -726,6 +717,10 @@ class _ProfessionalProfileEditScreenState extends State<ProfessionalProfileEditS
                         onPressed: _showAddSkillDialog,
                         icon: const Icon(Icons.add),
                         label: const Text('Ajouter une compétence'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFFCC00),
+                          foregroundColor: Colors.white,
+                        ),
                       ),
                     ],
                   ),
@@ -942,7 +937,7 @@ class _ProfessionalProfileEditScreenState extends State<ProfessionalProfileEditS
                 onPressed: _isLoading ? null : _submitForm,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: const Color(0xFF4CAF50),
+                  backgroundColor: const Color(0xFFFFCC00),
                   foregroundColor: Colors.white,
                 ),
                 child: _isLoading
@@ -1050,6 +1045,10 @@ class _ProfessionalProfileEditScreenState extends State<ProfessionalProfileEditS
                   Navigator.of(context).pop();
                 }
               },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFCC00),
+                foregroundColor: Colors.white,
+              ),
               child: const Text('Ajouter'),
             ),
           ],

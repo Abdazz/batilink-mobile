@@ -2,11 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
+import '../../services/api_service.dart';
+import '../../core/app_config.dart';
 
 enum QuotationContext {
   professional,
@@ -144,30 +146,16 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
       });
     }
 
-    final response = await http.put(
-      Uri.parse('http://10.0.2.2:8000/api/quotations/${widget.quotationId}'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: json.encode(requestData),
+    final response = await ApiService.post(
+      'quotations/${widget.quotationId}',
+      data: requestData,
     );
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      if (data != null && (data['success'] == true || data['status'] == 'success' || data is Map)) {
-        _showSuccessMessage(status);
-        Navigator.of(context).pop(true);
-      } else {
-        throw Exception('Réponse inattendue du serveur');
-      }
-    } else if (response.statusCode == 401) {
-      throw Exception('Token d\'authentification invalide. Veuillez vous reconnecter.');
-    } else if (response.statusCode == 403) {
-      throw Exception('Vous n\'êtes pas autorisé à répondre à ce devis. Il se peut qu\'il ne vous appartienne pas ou que vous n\'ayez pas les permissions nécessaires.');
+    if (response != null) {
+      _showSuccessMessage(status);
+      Navigator.of(context).pop(true);
     } else {
-      throw Exception('Erreur serveur: ${response.statusCode}');
+      throw Exception('Réponse inattendue du serveur');
     }
   }
 
@@ -181,26 +169,17 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
       print('Données d\'acceptation envoyées: $acceptanceData');
       print('ID client du devis: ${widget.quotation['client']?['id']}');
 
-      final response = await http.post(
-        Uri.parse('http://10.0.2.2:8000/api/quotations/${widget.quotationId}/accept'),
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode(acceptanceData),
+      final response = await ApiService.post(
+        'quotations/${widget.quotationId}/accept',
+        data: acceptanceData,
       );
 
-      print('Réponse serveur (${response.statusCode}): ${response.body}');
-      print('Headers de requête: ${response.request?.headers}');
-      print('URL de requête: ${response.request?.url}');
+      print('Réponse serveur: $response');
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        if (data['success'] == true || data['status'] == 'success' || data['data'] != null) {
-          if (data['acceptance_proof'] != null) {
-            print('Détails d\'acceptation reçus: ${data['acceptance_proof']}');
+      if (response != null) {
+        if (response['success'] == true || response['status'] == 'success' || response['data'] != null) {
+          if (response['acceptance_proof'] != null) {
+            print('Détails d\'acceptation reçus: ${response['acceptance_proof']}');
           }
 
           ScaffoldMessenger.of(context).showSnackBar(
@@ -211,16 +190,11 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
           );
           Navigator.of(context).pop(true);
         } else {
-          print('Structure de réponse inattendue: $data');
-          throw Exception('Réponse inattendue du serveur: ${data.toString()}');
+          print('Structure de réponse inattendue: $response');
+          throw Exception('Réponse inattendue du serveur: ${response.toString()}');
         }
-      } else if (response.statusCode == 422) {
-        final errorData = json.decode(response.body);
-        throw Exception('Données invalides: ${errorData['message'] ?? 'Erreur de validation'}');
-      } else if (response.statusCode == 403) {
-        throw Exception('Vous n\'êtes pas autorisé à accepter ce devis. Il se peut qu\'il ne vous appartienne pas ou que vous n\'ayez pas les permissions nécessaires.');
       } else {
-        throw Exception('Erreur serveur: ${response.statusCode}');
+        throw Exception('Données invalides');
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -290,13 +264,11 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                     ElevatedButton.icon(
                       onPressed: () async {
                         final photos = await _picker.pickMultiImage();
-                        if (photos != null) {
-                          setState(() {
-                            _startPhotos.addAll(photos.map((xfile) => File(xfile.path)));
-                            _tempStartPhotosCount = _startPhotos.length;
-                          });
-                        }
-                      },
+                        setState(() {
+                          _startPhotos.addAll(photos.map((xfile) => File(xfile.path)));
+                          _tempStartPhotosCount = _startPhotos.length;
+                        });
+                                            },
                       icon: const Icon(Icons.photo_camera),
                       label: const Text('Ajouter des photos'),
                       style: ElevatedButton.styleFrom(
@@ -352,7 +324,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
       // Créer une requête multipart pour envoyer les fichiers
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('http://10.0.2.2:8000/api/quotations/${widget.quotationId}/start'),
+        Uri.parse('${AppConfig.baseUrl}/api/quotations/${widget.quotationId}/start'),
       );
 
       // Ajouter les headers d'autorisation
@@ -501,13 +473,11 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                     ElevatedButton.icon(
                       onPressed: () async {
                         final photos = await _picker.pickMultiImage();
-                        if (photos != null) {
-                          setState(() {
-                            _completionPhotos.addAll(photos.map((xfile) => File(xfile.path)));
-                            _tempCompletionPhotosCount = _completionPhotos.length;
-                          });
-                        }
-                      },
+                        setState(() {
+                          _completionPhotos.addAll(photos.map((xfile) => File(xfile.path)));
+                          _tempCompletionPhotosCount = _completionPhotos.length;
+                        });
+                                            },
                       icon: const Icon(Icons.photo_camera),
                       label: const Text('Ajouter des photos'),
                       style: ElevatedButton.styleFrom(
@@ -566,7 +536,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
       if (_completionPhotos.isNotEmpty) {
         request = http.MultipartRequest(
           'POST',
-          Uri.parse('http://10.0.2.2:8000/api/quotations/${widget.quotationId}/complete'),
+          Uri.parse('${AppConfig.baseUrl}/api/quotations/${widget.quotationId}/complete'),
         );
         request.headers['Authorization'] = 'Bearer $token';
 
@@ -591,7 +561,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
       } else {
         // Si pas de photos, utiliser une requête JSON normale
         final response = await http.post(
-          Uri.parse('http://10.0.2.2:8000/api/quotations/${widget.quotationId}/complete'),
+          Uri.parse('${AppConfig.baseUrl}/api/quotations/${widget.quotationId}/complete'),
           headers: {
             'Accept': 'application/json',
             'Authorization': 'Bearer $token',
@@ -635,42 +605,40 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
         }
       }
 
-      if (request != null) {
-        print('Envoi de ${request.files.length} photo(s) d\'achèvement');
-        print('Données textuelles: ${request.fields}');
+      print('Envoi de ${request.files.length} photo(s) d\'achèvement');
+      print('Données textuelles: ${request.fields}');
 
-        final response = await request.send();
-        final responseBody = await response.stream.bytesToString();
+      final response = await request.send();
+      final responseBody = await response.stream.bytesToString();
 
-        print('Réponse achèvement (${response.statusCode}): $responseBody');
+      print('Réponse achèvement (${response.statusCode}): $responseBody');
 
-        if (response.statusCode == 200) {
-          final data = json.decode(responseBody);
+      if (response.statusCode == 200) {
+        final data = json.decode(responseBody);
 
-          if (data['data'] != null || data['status'] == 'completed') {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Travaux terminés ! Vous pouvez maintenant laisser un avis.'),
-                backgroundColor: Colors.green,
-              ),
-            );
-            _clearTempData();
-            Navigator.of(context).pop(true);
-          } else {
-            throw Exception('Réponse inattendue du serveur');
-          }
+        if (data['data'] != null || data['status'] == 'completed') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Travaux terminés ! Vous pouvez maintenant laisser un avis.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          _clearTempData();
+          Navigator.of(context).pop(true);
         } else {
-          final errorData = json.decode(responseBody);
-          if (response.statusCode == 422) {
-            throw Exception('Le devis doit être en cours pour pouvoir être terminé. ${errorData['message'] ?? ''}');
-          } else if (response.statusCode == 403) {
-            throw Exception('Vous n\'êtes pas autorisé à terminer ce travail. Il se peut qu\'il ne vous appartienne pas.');
-          } else {
-            throw Exception('Erreur serveur: ${response.statusCode} - ${errorData['message'] ?? 'Erreur inconnue'}');
-          }
+          throw Exception('Réponse inattendue du serveur');
+        }
+      } else {
+        final errorData = json.decode(responseBody);
+        if (response.statusCode == 422) {
+          throw Exception('Le devis doit être en cours pour pouvoir être terminé. ${errorData['message'] ?? ''}');
+        } else if (response.statusCode == 403) {
+          throw Exception('Vous n\'êtes pas autorisé à terminer ce travail. Il se peut qu\'il ne vous appartienne pas.');
+        } else {
+          throw Exception('Erreur serveur: ${response.statusCode} - ${errorData['message'] ?? 'Erreur inconnue'}');
         }
       }
-    } catch (e) {
+        } catch (e) {
       print('Erreur lors de l\'achèvement: $e');
       setState(() {
         _errorMessage = 'Erreur lors de l\'achèvement: $e';
@@ -747,13 +715,11 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                     ElevatedButton.icon(
                       onPressed: () async {
                         final photos = await _picker.pickMultiImage();
-                        if (photos != null) {
-                          setState(() {
-                            _cancellationPhotos.addAll(photos.map((xfile) => File(xfile.path)));
-                            _tempCancellationPhotosCount = _cancellationPhotos.length;
-                          });
-                        }
-                      },
+                        setState(() {
+                          _cancellationPhotos.addAll(photos.map((xfile) => File(xfile.path)));
+                          _tempCancellationPhotosCount = _cancellationPhotos.length;
+                        });
+                                            },
                       icon: const Icon(Icons.photo_camera),
                       label: const Text('Ajouter des justificatifs'),
                       style: ElevatedButton.styleFrom(
@@ -803,9 +769,6 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     });
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token') ?? widget.token;
-
       final cancellationData = {
         'cancellation_reason': _cancellationReasonController.text,
         'cancellation_date': DateFormat('yyyy-MM-dd').format(_selectedCancellationDate),
@@ -814,22 +777,15 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
 
       print('Données d\'annulation envoyées: $cancellationData');
 
-      final response = await http.post(
-        Uri.parse('http://10.0.2.2:8000/api/quotations/${widget.quotationId}/cancel'),
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode(cancellationData),
+      final response = await ApiService.post(
+        'quotations/${widget.quotationId}/cancel',
+        data: cancellationData,
       );
 
-      print('Réponse annulation (${response.statusCode}): ${response.body}');
+      print('Réponse annulation: $response');
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        if (data['data'] != null || data['status'] == 'cancelled') {
+      if (response != null) {
+        if (response['data'] != null || response['status'] == 'cancelled') {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Devis annulé avec succès.'),
@@ -841,13 +797,8 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
         } else {
           throw Exception('Réponse inattendue du serveur');
         }
-      } else if (response.statusCode == 422) {
-        final errorData = json.decode(response.body);
-        throw Exception('Le devis ne peut pas être annulé dans son état actuel. ${errorData['message'] ?? ''}');
-      } else if (response.statusCode == 403) {
-        throw Exception('Vous n\'êtes pas autorisé à annuler ce devis. Il se peut qu\'il ne vous appartienne pas.');
       } else {
-        throw Exception('Erreur serveur: ${response.statusCode}');
+        throw Exception('Le devis ne peut pas être annulé dans son état actuel');
       }
     } catch (e) {
       print('Erreur lors de l\'annulation: $e');
@@ -949,12 +900,10 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                     ElevatedButton.icon(
                       onPressed: () async {
                         final photos = await _picker.pickMultiImage();
-                        if (photos != null) {
-                          setState(() {
-                            _reviewPhotos.addAll(photos.map((xfile) => File(xfile.path)));
-                          });
-                        }
-                      },
+                        setState(() {
+                          _reviewPhotos.addAll(photos.map((xfile) => File(xfile.path)));
+                        });
+                                            },
                       icon: const Icon(Icons.photo_camera),
                       label: const Text('Ajouter des photos'),
                       style: ElevatedButton.styleFrom(
@@ -1004,8 +953,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     });
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token') ?? widget.token;
+      await SharedPreferences.getInstance();
 
       final reviewData = {
         'rating': _reviewRating,
@@ -1016,22 +964,15 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
 
       print('Données d\'avis envoyées: $reviewData');
 
-      final response = await http.post(
-        Uri.parse('http://10.0.2.2:8000/api/quotations/${widget.quotationId}/reviews'),
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode(reviewData),
+      final response = await ApiService.post(
+        'quotations/${widget.quotationId}/reviews',
+        data: reviewData,
       );
 
-      print('Réponse avis (${response.statusCode}): ${response.body}');
+      print('Réponse avis: $response');
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = json.decode(response.body);
-
-        if (data['data'] != null || data['id'] != null) {
+      if (response != null) {
+        if (response['data'] != null || response['id'] != null) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Avis publié avec succès ! Merci pour votre retour.'),
@@ -1043,15 +984,8 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
         } else {
           throw Exception('Réponse inattendue du serveur');
         }
-      } else if (response.statusCode == 422) {
-        final errorData = json.decode(response.body);
-        throw Exception('Impossible de créer un avis. ${errorData['message'] ?? 'Le devis doit être terminé.'}');
-      } else if (response.statusCode == 403) {
-        throw Exception('Vous n\'êtes pas autorisé à laisser un avis sur ce devis. Il se peut qu\'il ne vous appartienne pas.');
-      } else if (response.statusCode == 409) {
-        throw Exception('Vous avez déjà laissé un avis sur ce devis.');
       } else {
-        throw Exception('Erreur serveur: ${response.statusCode}');
+        throw Exception('Impossible de créer un avis');
       }
     } catch (e) {
       print('Erreur lors de la création d\'avis: $e');
@@ -1208,13 +1142,13 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            const Color(0xFF4CAF50).withOpacity(0.1),
-            const Color(0xFF4CAF50).withOpacity(0.05),
+            const Color(0xFFFFCC00).withOpacity(0.1),
+            const Color(0xFFFFCC00).withOpacity(0.05),
           ],
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF4CAF50).withOpacity(0.2),
+          color: const Color(0xFFFFCC00).withOpacity(0.2),
           width: 1,
         ),
       ),
@@ -1240,7 +1174,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                       ? (widget.quotation['client']?['first_name']?[0] ?? 'C').toUpperCase()
                       : (widget.quotation['professional']?['company_name']?[0] ?? 'P').toUpperCase(),
                   style: GoogleFonts.poppins(
-                    color: const Color(0xFF4CAF50),
+                    color: const Color(0xFFFFCC00),
                     fontWeight: FontWeight.w600,
                     fontSize: 20,
                   ),
@@ -1325,7 +1259,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
               widget.context == QuotationContext.professional ? 'Budget proposé' : 'Montant du devis',
               '${widget.quotation['amount']} FCFA',
               Icons.attach_money,
-              valueColor: const Color(0xFF4CAF50),
+              valueColor: const Color(0xFFFFCC00),
             ),
 
           const SizedBox(height: 16),
@@ -1511,33 +1445,33 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     }
 
     // Avis temporaire (si en cours de saisie)
-    final hasTempReviewData = _reviewRating != null || _reviewCommentController.text.isNotEmpty;
+    // ignore: unnecessary_null_comparison
+    final hasTempReviewData = _reviewRating != null;
 
     if (hasTempReviewData) {
       steps.add(_buildStepCard(
         '⭐ Avis en cours',
         [
-          if (_reviewRating != null)
-            Container(
-              width: double.infinity,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ...List.generate(5, (index) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 1.0),
-                      child: Icon(
-                        index < _reviewRating! ? Icons.star : Icons.star_border,
-                        color: Colors.amber,
-                        size: 12,
-                      ),
-                    );
-                  }),
-                  const SizedBox(width: 4),
-                  Text('($_reviewRating/5)', style: GoogleFonts.poppins(fontSize: 12, color: Colors.amber, fontWeight: FontWeight.w600)),
-                ],
-              ),
+          Container(
+            width: double.infinity,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ...List.generate(5, (index) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 1.0),
+                    child: Icon(
+                      index < _reviewRating ? Icons.star : Icons.star_border,
+                      color: Colors.amber,
+                      size: 12,
+                    ),
+                  );
+                }),
+                const SizedBox(width: 4),
+                Text('($_reviewRating/5)', style: GoogleFonts.poppins(fontSize: 12, color: Colors.amber, fontWeight: FontWeight.w600)),
+              ],
             ),
+          ),
           if (_reviewCommentController.text.isNotEmpty)
             _buildDetailItem('📝 Commentaire temporaire', _reviewCommentController.text, Icons.edit_note, valueColor: Colors.orange),
         ],
@@ -1684,7 +1618,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : () => _respondToQuotation('accepted'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
+                    backgroundColor: const Color(0xFFFFCC00),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
@@ -1786,7 +1720,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : () => _respondToQuotation('accepted'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
+                    backgroundColor: const Color(0xFFFFCC00),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
@@ -1902,7 +1836,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                       : const Icon(Icons.play_arrow),
                   label: const Text('Démarrer les travaux'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
+                    backgroundColor: const Color(0xFFFFCC00),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
@@ -1986,7 +1920,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                       : const Icon(Icons.check_circle),
                   label: const Text('Marquer comme terminé'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
+                    backgroundColor: const Color(0xFFFFCC00),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(

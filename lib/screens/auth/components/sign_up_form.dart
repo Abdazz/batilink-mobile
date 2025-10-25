@@ -2,6 +2,7 @@ import 'package:form_field_validator/form_field_validator.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../../../services/auth_service.dart';
+import '../../../core/app_config.dart';
 import '../../../constants.dart';
 
 class SignUpForm extends StatefulWidget {
@@ -28,7 +29,7 @@ class _SignUpFormState extends State<SignUpForm> {
   @override
   void initState() {
     super.initState();
-    _authService = AuthService(baseUrl: 'http://10.0.2.2:8000');
+    _authService = AuthService(baseUrl: AppConfig.baseUrl);
   }
 
   late String _firstName;

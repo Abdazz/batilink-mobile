@@ -67,7 +67,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
       final token = _token; // Utiliser le token récupéré depuis SharedPreferences
       final authService = AuthService(baseUrl: 'http://10.0.2.2:8000');
 
-      if (token == null || token.isEmpty) {
+      if (token.isEmpty) {
         _showError('Token d\'authentification manquant');
         return;
       }

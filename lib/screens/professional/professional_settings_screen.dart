@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
 import 'package:google_fonts/google_fonts.dart';
+import '../../services/api_service.dart';
+import '../../core/app_config.dart';
 import 'portfolio_management_screen.dart';
 import 'business_hours_edit_screen.dart';
 import 'professional_profile_edit_screen.dart';
@@ -55,7 +56,7 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
         } else {
           print('URL relative détectée, construction de l\'URL complète');
           // URL relative - construire l'URL complète
-          fullPhotoUrl = 'http://10.0.2.2:8000$url';
+          fullPhotoUrl = AppConfig.buildMediaUrl(url);
           print('URL construite: $fullPhotoUrl');
         }
       } else {
@@ -65,7 +66,7 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
 
     // Fallback: Ancienne structure avec profile_photo_path
     if (fullPhotoUrl == null && profileData['profile_photo_path'] != null && profileData['profile_photo_path'].toString().isNotEmpty) {
-      fullPhotoUrl = 'http://10.0.2.2:8000${profileData['profile_photo_path']}';
+      fullPhotoUrl = AppConfig.buildMediaUrl(profileData['profile_photo_path']);
     }
 
     // Créer une copie des données avec l'URL complète
@@ -101,121 +102,26 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
 
       print('=== DEBUG - Récupération du profil professionnel ===');
       print('Token: ${token.substring(0, 20)}...');
-      print('URL: http://10.0.2.2:8000/api/professional/profile/me');
+      print('URL: ${AppConfig.baseUrl}/api/professional/profile/me');
 
-      final response = await http.get(
-        Uri.parse('http://10.0.2.2:8000/api/professional/profile/me'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Accept': 'application/json',
-        },
-      );
+      final data = await ApiService.get('professional/profile/me');
 
-      print('Réponse reçue - Status: ${response.statusCode}');
-      print('Réponse reçue - Body: ${response.body}');
+      print('Données reçues: $data');
+      print('Type de data: ${data.runtimeType}');
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+      if (data != null) {
+        final profileData = data;
 
-        print('Données décodées: $data');
+        print('Structure des données du profil: ${profileData.runtimeType}');
 
-        if (data['success'] == true && data['data'] != null) {
-          final profileData = data['data'];
+        // NOUVELLE STRUCTURE: L'API retourne directement l'objet profil dans 'data'
+        if (profileData is Map && profileData['data'] != null) {
+          final profile = profileData['data'];
 
-          print('Structure des données du profil: ${profileData.runtimeType}');
+          print('ID du profil récupéré: ${profile['id']}');
+          print('Nom de l\'entreprise: ${profile['company_name']}');
 
-          // NOUVELLE STRUCTURE: L'API retourne un tableau dans data.data
-          if (profileData is Map && profileData['data'] != null && (profileData['data'] as List).isNotEmpty) {
-            final profiles = profileData['data'] as List;
-
-            print('Nombre de profils reçus: ${profiles.length}');
-
-            // Chercher le profil le plus récent ou le profil avec les données complètes
-            Map<String, dynamic>? selectedProfile;
-
-            // D'abord chercher par ID spécifique (si on connaît l'ID du profil créé)
-            final prefs = await SharedPreferences.getInstance();
-            final lastProfileId = prefs.getString('last_profile_id');
-
-            if (lastProfileId != null && lastProfileId.isNotEmpty) {
-              for (var profile in profiles) {
-                if (profile is Map<String, dynamic> && profile['id'] == lastProfileId) {
-                  selectedProfile = profile;
-                  break;
-                }
-              }
-            }
-
-            // Sinon, chercher le profil avec les données les plus récentes (pas par défaut)
-            if (selectedProfile == null) {
-              for (var profile in profiles) {
-                if (profile is Map<String, dynamic>) {
-                  final companyName = profile['company_name'] ?? '';
-                  if (companyName != 'Entreprise par défaut' && companyName.isNotEmpty) {
-                    selectedProfile = profile;
-                    break;
-                  }
-                }
-              }
-            }
-
-            // Si toujours pas trouvé, chercher par mots-clés dans la description ou le nom
-            if (selectedProfile == null) {
-              for (var profile in profiles) {
-                if (profile is Map<String, dynamic>) {
-                  final companyName = (profile['company_name'] ?? '').toString().toLowerCase();
-                  final jobTitle = (profile['job_title'] ?? '').toString().toLowerCase();
-
-                  // Éviter les profils par défaut
-                  if (!companyName.contains('par défaut') && !jobTitle.contains('professionnel')) {
-                    selectedProfile = profile;
-                    break;
-                  }
-                }
-              }
-            }
-
-            // Dernière option: prendre le premier profil valide
-            if (selectedProfile == null) {
-              for (var profile in profiles) {
-                if (profile is Map<String, dynamic> && profile['id'] != null) {
-                  selectedProfile = profile;
-                  break;
-                }
-              }
-            }
-
-            if (selectedProfile != null) {
-              print('ID du profil sélectionné: ${selectedProfile['id']}');
-              print('Nom de l\'entreprise sélectionnée: ${selectedProfile['company_name']}');
-
-              // Debug spécifique pour business_hours
-              print('=== DEBUG BUSINESS HOURS ===');
-              print('business_hours dans profil brut: ${selectedProfile['business_hours']}');
-              print('Type business_hours: ${selectedProfile['business_hours']?.runtimeType}');
-
-              setState(() {
-                _profile = _transformProfileData(Map<String, dynamic>.from(selectedProfile as Map<dynamic, dynamic>));
-              });
-
-              // Debug: Vérifier les horaires reçus après setState
-              print('Horaires reçus après setState: ${_profile['business_hours']}');
-              print('Type des horaires après setState: ${_profile['business_hours']?.runtimeType}');
-              print('============================');
-            } else {
-              print('Aucun profil valide trouvé dans le tableau');
-              setState(() {
-                _error = 'Aucun profil professionnel valide trouvé';
-              });
-            }
-          }
-          // ANCIENNE STRUCTURE: L'API retourne directement l'objet profil dans 'data'
-          else if (profileData is Map) {
-            final profile = profileData;
-
-            print('ID du profil récupéré: ${profile['id']}');
-            print('Nom de l\'entreprise: ${profile['company_name']}');
-
+          if (profile is Map<String, dynamic>) {
             setState(() {
               _profile = _transformProfileData(Map<String, dynamic>.from(profile));
             });
@@ -226,26 +132,106 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
             print('Type des horaires: ${_profile['business_hours'].runtimeType}');
             print('============================');
           } else {
-            print('Structure inattendue des données du profil');
+            print('Format du profil inattendu: ${profile.runtimeType}');
             setState(() {
-              _error = 'Aucun profil professionnel trouvé pour votre compte';
+              _error = 'Format du profil inattendu';
+            });
+          }
+        }
+        // ANCIENNE STRUCTURE: L'API retourne un tableau dans data.data (pour compatibilité)
+        else if (profileData is Map && profileData['data'] != null && profileData['data'] is List && (profileData['data'] as List).isNotEmpty) {
+          final profiles = profileData['data'] as List;
+
+          print('Nombre de profils reçus: ${profiles.length}');
+
+          // Chercher le profil le plus récent ou le profil avec les données complètes
+          Map<String, dynamic>? selectedProfile;
+
+          // D'abord chercher par ID spécifique (si on connaît l'ID du profil créé)
+          final prefs = await SharedPreferences.getInstance();
+          final lastProfileId = prefs.getString('last_profile_id');
+
+          if (lastProfileId != null && lastProfileId.isNotEmpty) {
+            for (var profile in profiles) {
+              if (profile is Map<String, dynamic> && profile['id'] == lastProfileId) {
+                selectedProfile = profile;
+                break;
+              }
+            }
+          }
+
+          // Sinon, chercher le profil avec les données les plus récentes (pas par défaut)
+          if (selectedProfile == null) {
+            for (var profile in profiles) {
+              if (profile is Map<String, dynamic>) {
+                final companyName = profile['company_name'] ?? '';
+                if (companyName != 'Entreprise par défaut' && companyName.isNotEmpty) {
+                  selectedProfile = profile;
+                  break;
+                }
+              }
+            }
+          }
+
+          // Si toujours pas trouvé, chercher par mots-clés dans la description ou le nom
+          if (selectedProfile == null) {
+            for (var profile in profiles) {
+              if (profile is Map<String, dynamic>) {
+                final companyName = (profile['company_name'] ?? '').toString().toLowerCase();
+                final jobTitle = (profile['job_title'] ?? '').toString().toLowerCase();
+
+                // Éviter les profils par défaut
+                if (!companyName.contains('par défaut') && !jobTitle.contains('professionnel')) {
+                  selectedProfile = profile;
+                  break;
+                }
+              }
+            }
+          }
+
+          // Dernière option: prendre le premier profil valide
+          if (selectedProfile == null) {
+            for (var profile in profiles) {
+              if (profile is Map<String, dynamic> && profile['id'] != null) {
+                selectedProfile = profile;
+                break;
+              }
+            }
+          }
+
+          if (selectedProfile != null) {
+            print('ID du profil sélectionné: ${selectedProfile['id']}');
+            print('Nom de l\'entreprise sélectionnée: ${selectedProfile['company_name']}');
+
+            // Debug spécifique pour business_hours
+            print('=== DEBUG BUSINESS HOURS ===');
+            print('business_hours dans profil brut: ${selectedProfile['business_hours']}');
+            print('Type business_hours: ${selectedProfile['business_hours']?.runtimeType}');
+
+            setState(() {
+              _profile = _transformProfileData(Map<String, dynamic>.from(selectedProfile as Map<dynamic, dynamic>));
+            });
+
+            // Debug: Vérifier les horaires reçus après setState
+            print('Horaires reçus après setState: ${_profile['business_hours']}');
+            print('Type des horaires après setState: ${_profile['business_hours']?.runtimeType}');
+            print('============================');
+          } else {
+            print('Aucun profil valide trouvé dans le tableau');
+            setState(() {
+              _error = 'Aucun profil professionnel valide trouvé';
             });
           }
         } else {
-          print('Réponse API invalide: success=false ou data=null');
+          print('Structure inattendue des données du profil');
           setState(() {
-            _error = 'Format de réponse inattendu de l\'API';
+            _error = 'Aucun profil professionnel trouvé pour votre compte';
           });
         }
-      } else if (response.statusCode == 404) {
-        print('Profil professionnel non trouvé (404)');
-        setState(() {
-          _error = 'Profil professionnel non trouvé. Veuillez compléter votre profil.';
-        });
       } else {
-        print('Erreur serveur: ${response.statusCode}');
+        print('Réponse API invalide: success=false ou data=null');
         setState(() {
-          _error = 'Erreur serveur: ${response.statusCode} - ${response.body}';
+          _error = 'Format de réponse inattendu de l\'API';
         });
       }
     } catch (e) {
@@ -266,10 +252,10 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
       appBar: AppBar(
         backgroundColor: const Color(0xFFFFCC00),
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFFFFCC00)),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        // leading: IconButton(
+        //   icon: const Icon(Icons.arrow_back, color: Color(0xFFFFCC00)),
+        //   onPressed: () => Navigator.of(context).pop(),
+        // ),
         title: Text(
           'Mon profil professionnel',
           style: GoogleFonts.poppins(

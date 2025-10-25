@@ -1,9 +1,9 @@
 import 'package:batilink_mobile_app/screens/professional/complete_profile_form.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import '../../services/auth_service.dart';
+import '../../services/api_service.dart';
+import '../../core/app_config.dart';
 
 class ProClientCompleteProfileScreen extends StatefulWidget {
   const ProClientCompleteProfileScreen({Key? key}) : super(key: key);
@@ -14,7 +14,7 @@ class ProClientCompleteProfileScreen extends StatefulWidget {
 
 class _ProClientCompleteProfileScreenState extends State<ProClientCompleteProfileScreen> {
   bool _isSubmitting = false;
-  final _auth = AuthService(baseUrl: 'http://10.0.2.2:8000');
+  final _auth = AuthService(baseUrl: AppConfig.baseUrl);
 
   Future<void> _submitForm(Map<String, dynamic> formData) async {
     if (!mounted) return;
@@ -29,56 +29,36 @@ class _ProClientCompleteProfileScreenState extends State<ProClientCompleteProfil
         throw Exception('Token non trouvé');
       }
 
-      // Création d'un client HTTP personnalisé qui suit les redirections
-      final client = http.Client();
+      print('Envoi des données du formulaire pro-client...');
+      print('URL: ${AppConfig.baseUrl}/api/professional/profile/complete');
+      print('Données: $formData');
 
-      try {
-        print('Envoi des données du formulaire pro-client...');
-        print('URL: http://10.0.2.2:8000/api/pro-client/profile/complete');
-        print('Données: $formData');
+      final response = await ApiService.post(
+        'professional/profile/complete',
+        data: {...formData, 'role': 'pro_client'},
+      );
 
-        final response = await client.post(
-          Uri.parse('http://10.0.2.2:8000/api/professional/profile/complete'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: jsonEncode({...formData, 'role': 'pro_client'}),
-        );
+      print('Réponse: $response');
 
-        print('Réponse: ${response.statusCode}');
-        print('Corps: ${response.body}');
+      if (response != null) {
+        // Récupérer le profil mis à jour
+        try {
+          print('Récupération du profil mis à jour...');
+          final updatedProfileResp = await _auth.getProClientProfile(accessToken: token);
+          if (updatedProfileResp.statusCode == 200) {
+            final updatedProfile = await _auth.parseProClientProfileResponse(updatedProfileResp);
+            print('Profil pro-client mis à jour récupéré: $updatedProfile');
 
-        if (response.statusCode == 200 || response.statusCode == 201) {
-          // Récupérer le profil mis à jour
-          try {
-            print('Récupération du profil mis à jour...');
-            final updatedProfileResp = await _auth.getProClientProfile(accessToken: token);
-            if (updatedProfileResp.statusCode == 200) {
-              final updatedProfile = await _auth.parseProClientProfileResponse(updatedProfileResp);
-              print('Profil pro-client mis à jour récupéré: $updatedProfile');
-
-              if (mounted) {
-                // Aller au dashboard pro-client
-                Navigator.pushReplacementNamed(context, '/pro-client/dashboard', arguments: {
-                  'token': token,
-                  'profile': updatedProfile ?? formData,
-                });
-              }
-            } else {
-              print('Erreur récupération profil mis à jour: ${updatedProfileResp.statusCode}');
-              // Aller au dashboard avec les données locales
-              if (mounted) {
-                Navigator.pushReplacementNamed(context, '/pro-client/dashboard', arguments: {
-                  'token': token,
-                  'profile': formData,
-                });
-              }
+            if (mounted) {
+              // Aller au dashboard pro-client
+              Navigator.pushReplacementNamed(context, '/pro-client/dashboard', arguments: {
+                'token': token,
+                'profile': updatedProfile ?? formData,
+              });
             }
-          } catch (e) {
-            print('Erreur lors de la récupération du profil mis à jour: $e');
-            // Aller au dashboard avec les données locales en cas d'erreur
+          } else {
+            print('Erreur récupération profil mis à jour: ${updatedProfileResp.statusCode}');
+            // Aller au dashboard avec les données locales
             if (mounted) {
               Navigator.pushReplacementNamed(context, '/pro-client/dashboard', arguments: {
                 'token': token,
@@ -86,33 +66,19 @@ class _ProClientCompleteProfileScreenState extends State<ProClientCompleteProfil
               });
             }
           }
-        } else {
-          // Gestion des erreurs côté serveur
-          final errorData = jsonDecode(response.body);
-          throw Exception(errorData['message'] ?? 'Erreur lors de la mise à jour du profil: ${response.statusCode}');
+        } catch (e) {
+          print('Erreur lors de la récupération du profil mis à jour: $e');
+          // Aller au dashboard avec les données locales en cas d'erreur
+          if (mounted) {
+            Navigator.pushReplacementNamed(context, '/pro-client/dashboard', arguments: {
+              'token': token,
+              'profile': formData,
+            });
+          }
         }
-      } finally {
-        client.close();
-      }
-    } on FormatException catch (e) {
-      print('Erreur de format: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Erreur de format des données. Veuillez réessayer.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } on http.ClientException catch (e) {
-      print('Erreur de connexion: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur de connexion: ${e.message}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      } else {
+        // Gestion des erreurs côté serveur
+        throw Exception('Erreur lors de la mise à jour du profil');
       }
     } catch (e) {
       print('Erreur inattendue: $e');

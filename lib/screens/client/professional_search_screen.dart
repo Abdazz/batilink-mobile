@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -386,32 +385,15 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
         'sort_by': _sortBy,
       };
 
-      final uri = Uri.parse('${ApiService.baseUrl}/api/professionals').replace(
-        queryParameters: params,
-      );
+      print('Envoi de la requête avec les paramètres: $params');
 
-      print('Envoi de la requête à: $uri');
-      print('Avec les paramètres: $params');
-      print('Headers: ${{
-        'Accept': 'application/json',
-        'Authorization': 'Bearer $token'
-      }}');
+      final data = await ApiService.get('professionals', queryParams: params);
 
-      final response = await http.get(
-        uri,
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      ).timeout(const Duration(seconds: 10));
+      print('Données reçues: $data');
+      print('Type de data: ${data.runtimeType}');
 
-      print('Réponse reçue: ${response.statusCode}');
-      print('Corps de la réponse: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(response.bodyBytes));
-
-        // Gestion de la structure de réponse imbriquée
+      if (data != null) {
+        // Gestion de la structure de réponse
         final Map<String, dynamic> responseData = data is Map<String, dynamic> ? data : {};
         final Map<String, dynamic> professionalsData = responseData['data'] is Map<String, dynamic>
             ? responseData['data'] as Map<String, dynamic>
@@ -458,40 +440,14 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
           _isLoading = false;
         });
       } else {
-        final error = jsonDecode(utf8.decode(response.bodyBytes));
-        final errorMessage = error['message'] ?? 'Échec du chargement des professionnels (${response.statusCode})';
-
-        // Gestion spécifique des erreurs courantes
-        if (response.statusCode == 404) {
-          if (errorMessage.contains('ID professionnel invalide')) {
-            throw Exception('L\'endpoint de recherche n\'est pas disponible. Veuillez contacter l\'administrateur.');
-          } else {
-            throw Exception('Page non trouvée. Vérifiez l\'URL de l\'API.');
-          }
-        } else if (response.statusCode == 401) {
-          throw Exception('Token d\'authentification invalide. Veuillez vous reconnecter.');
-        } else if (response.statusCode == 403) {
-          throw Exception('Accès refusé. Vous n\'avez pas les permissions nécessaires.');
-        } else {
-          throw Exception(errorMessage);
-        }
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Erreur lors du chargement des professionnels'),
+            duration: Duration(seconds: 5),
+          ),
+        );
       }
-    } on http.ClientException catch (e) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erreur de connexion: ${e.message}'),
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    } on TimeoutException {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Délai d\'attente dépassé. Vérifiez votre connexion internet.'),
-          duration: Duration(seconds: 5),
-        ),
-      );
     } catch (e, stackTrace) {
       print('Erreur détaillée: $e');
       print('Stack trace: $stackTrace');
@@ -540,21 +496,15 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
         return;
       }
 
-      final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/api/favorites/professionals/toggle'),
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({
+      final response = await ApiService.post(
+        'favorites/professionals/toggle',
+        data: {
           'professional_id': professional.id,
-        }),
+        },
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(response.bodyBytes));
-        final message = data['message'] ?? 'Action effectuée';
+      if (response != null) {
+        final message = response['message'] ?? 'Action effectuée';
 
         // Update the professional's favorite status in the list
         setState(() {
@@ -571,11 +521,9 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
           ),
         );
       } else {
-        final error = jsonDecode(utf8.decode(response.bodyBytes));
-        final errorMessage = error['message'] ?? 'Erreur lors de l\'opération';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
+          const SnackBar(
+            content: Text('Erreur lors de l\'opération'),
             backgroundColor: Colors.red,
           ),
         );

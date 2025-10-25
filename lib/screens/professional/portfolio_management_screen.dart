@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/portfolio_service.dart';
+import '../../core/app_config.dart';
 import 'dart:convert';
 
 class PortfolioManagementScreen extends StatefulWidget {
@@ -14,7 +15,7 @@ class PortfolioManagementScreen extends StatefulWidget {
 }
 
 class _PortfolioManagementScreenState extends State<PortfolioManagementScreen> {
-  final PortfolioService _portfolioService = PortfolioService(baseUrl: 'http://10.0.2.2:8000');
+  final PortfolioService _portfolioService = PortfolioService(baseUrl: AppConfig.baseUrl);
   List<Map<String, dynamic>> _portfolios = [];
   bool _isLoading = true;
   String _error = '';
@@ -26,7 +27,7 @@ class _PortfolioManagementScreenState extends State<PortfolioManagementScreen> {
     if (backendData['image_path'] != null && backendData['image_path'].toString().isNotEmpty) {
       // Le backend retourne des chemins relatifs comme /storage/portfolios/...
       // On construit l'URL complète en ajoutant la base URL
-      fullImageUrl = 'http://10.0.2.2:8000${backendData['image_path']}';
+      fullImageUrl = '${AppConfig.baseUrl}${backendData['image_path']}';
     }
 
     return {
@@ -267,10 +268,10 @@ class _PortfolioManagementScreenState extends State<PortfolioManagementScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFFFCC00),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF4CAF50)),
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
@@ -284,7 +285,7 @@ class _PortfolioManagementScreenState extends State<PortfolioManagementScreen> {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.add, color: Color(0xFF4CAF50)),
+            icon: const Icon(Icons.add, color: Colors.white),
             onPressed: _showAddPortfolioDialog,
           ),
         ],
@@ -292,7 +293,7 @@ class _PortfolioManagementScreenState extends State<PortfolioManagementScreen> {
       body: _buildBody(),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddPortfolioDialog,
-        backgroundColor: const Color(0xFF4CAF50),
+        backgroundColor: const Color(0xFFFFCC00),
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );
@@ -322,7 +323,7 @@ class _PortfolioManagementScreenState extends State<PortfolioManagementScreen> {
             ElevatedButton(
               onPressed: _loadPortfolios,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4CAF50),
+                backgroundColor: const Color(0xFFFFCC00),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -366,7 +367,7 @@ class _PortfolioManagementScreenState extends State<PortfolioManagementScreen> {
               icon: const Icon(Icons.add),
               label: const Text('Créer votre premier portfolio'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4CAF50),
+                backgroundColor: const Color(0xFFFFCC00),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
@@ -894,7 +895,7 @@ class _AddPortfolioDialogState extends State<AddPortfolioDialog> {
                             _isFeatured = value;
                           });
                         },
-                        activeColor: const Color(0xFF4CAF50),
+                        activeColor: const Color(0xFFFFCC00),
                       ),
                       const SizedBox(height: 16),
                       

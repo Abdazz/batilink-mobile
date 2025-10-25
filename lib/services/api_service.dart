@@ -1,15 +1,11 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../core/app_config.dart';
 
 class ApiService {
-  // Pour émulateur Android : 10.0.2.2 pointe vers localhost de la machine hôte
-  // Pour émulateur iOS : utilisez localhost normalement
-  static const String baseUrl = 'http://10.0.2.2:8000';
-
-  // Si vous testez sur un appareil physique, utilisez l'adresse IP de votre machine
-  // et assurez-vous que le port 8000 est accessible depuis le réseau
-  // static const String baseUrl = 'http://VOTRE_IP_LOCALE:8000';
+  // Configuration centralisée via AppConfig
+  // Plus besoin d'URL hardcodée - tout est géré dans AppConfig
 
   // Méthode pour effectuer une requête GET
   static Future<Map<String, String>> _getHeaders() async {
@@ -26,13 +22,7 @@ class ApiService {
   // Méthode pour effectuer une requête GET
   static Future<dynamic> get(String endpoint, {Map<String, dynamic>? queryParams}) async {
     try {
-      // S'assurer qu'il y a un seul slash entre la base et l'endpoint
-      final path = endpoint.startsWith('/') ? endpoint : '/$endpoint';
-      final uri = Uri.parse('$baseUrl$path').replace(
-        queryParameters: queryParams?.map((key, value) =>
-          MapEntry(key, value.toString())
-        ),
-      );
+      final uri = Uri.parse(AppConfig.buildUrl(endpoint, queryParams: queryParams));
 
       print('Requête GET vers: ${uri.toString()}');
 
@@ -54,13 +44,7 @@ class ApiService {
     Map<String, dynamic>? queryParams,
   }) async {
     try {
-      // S'assurer qu'il y a un seul slash entre la base et l'endpoint
-      final path = endpoint.startsWith('/') ? endpoint : '/$endpoint';
-      final uri = Uri.parse('$baseUrl$path').replace(
-        queryParameters: queryParams?.map((key, value) =>
-          MapEntry(key, value.toString())
-        ),
-      );
+      final uri = Uri.parse(AppConfig.buildUrl(endpoint, queryParams: queryParams));
 
       print('Requête POST vers: ${uri.toString()}');
 
@@ -96,14 +80,7 @@ class ApiService {
   }) async {
     try {
       final authToken = await getTokenWithFallback(providedToken: token);
-
-      // S'assurer qu'il y a un seul slash entre la base et l'endpoint
-      final path = endpoint.startsWith('/') ? endpoint : '/$endpoint';
-      final uri = Uri.parse('$baseUrl$path').replace(
-        queryParameters: queryParams?.map((key, value) =>
-          MapEntry(key, value.toString())
-        ),
-      );
+      final uri = Uri.parse(AppConfig.buildUrl(endpoint, queryParams: queryParams));
 
       print('Requête GET vers: ${uri.toString()}');
 
@@ -131,14 +108,7 @@ class ApiService {
   }) async {
     try {
       final authToken = await getTokenWithFallback(providedToken: token);
-
-      // S'assurer qu'il y a un seul slash entre la base et l'endpoint
-      final path = endpoint.startsWith('/') ? endpoint : '/$endpoint';
-      final uri = Uri.parse('$baseUrl$path').replace(
-        queryParameters: queryParams?.map((key, value) =>
-          MapEntry(key, value.toString())
-        ),
-      );
+      final uri = Uri.parse(AppConfig.buildUrl(endpoint, queryParams: queryParams));
 
       print('Requête POST vers: ${uri.toString()}');
 

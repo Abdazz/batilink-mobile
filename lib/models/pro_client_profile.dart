@@ -1,3 +1,5 @@
+import '../core/app_config.dart';
+
 class ProClientProfile {
   final String id;
   final String firstName;
@@ -76,7 +78,7 @@ class ProClientProfile {
     // Si c'est un chemin relatif, construire l'URL complète Laravel
     if (avatarUrl!.startsWith('/storage/') || avatarUrl!.startsWith('storage/')) {
       final cleanPath = avatarUrl!.startsWith('/') ? avatarUrl!.substring(1) : avatarUrl!;
-      return 'http://10.0.2.2:8000/$cleanPath';
+      return AppConfig.buildMediaUrl(cleanPath);
     }
 
     return avatarUrl;

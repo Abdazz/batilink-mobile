@@ -1,6 +1,4 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import '../../constants.dart';
 import 'components/sign_up_form.dart';
 
 class RegisterProfessionalScreen extends StatefulWidget {
@@ -38,7 +36,7 @@ class _RegisterProfessionalScreenState extends State<RegisterProfessionalScreen>
                     width: 80,
                     height: 80,
                     decoration: BoxDecoration(
-                      color: Theme.of(context).primaryColor.withOpacity(0.1),
+                      color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(

@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../core/app_config.dart';
 
 class ClientQuotationsScreen extends StatefulWidget {
   final String? token;
@@ -71,7 +72,7 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
       }
 
       final response = await http.get(
-        Uri.parse('http://10.0.2.2:8000/api/quotations'),
+        Uri.parse('${AppConfig.baseUrl}/api/quotations'),
         headers: {
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
@@ -119,7 +120,7 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
   Color _getStatusColor(String status) {
     switch (status) {
       case 'pending':
-        return Colors.orange;
+        return const Color(0xFFFFCC00); // Jaune au lieu d'orange
       case 'quoted':
         return Colors.blue;
       case 'accepted':
@@ -155,7 +156,7 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
       body: _isLoading
           ? const Center(
               child: CircularProgressIndicator(
-                color: Color(0xFF4CAF50),
+                color: const Color(0xFFFFCC00),
               ),
             )
           : _errorMessage != null
@@ -184,7 +185,7 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
                   ? _buildEmptyState()
                   : RefreshIndicator(
                       onRefresh: _loadQuotations,
-                      color: const Color(0xFF4CAF50),
+                      color: const Color(0xFFFFCC00),
                       child: ListView.builder(
                         padding: const EdgeInsets.all(16),
                         itemCount: _quotations.length,
@@ -258,7 +259,7 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
               style: GoogleFonts.poppins(),
             ),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4CAF50),
+              backgroundColor: const Color(0xFFFFCC00),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
@@ -409,7 +410,7 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
                       style: GoogleFonts.poppins(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: const Color(0xFF4CAF50),
+                        color: const Color(0xFFFFCC00),
                       ),
                     ),
                   ] else ...[
@@ -484,7 +485,7 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
       if (!avatarUrl.startsWith('http://') && !avatarUrl.startsWith('https://')) {
         if (avatarUrl.startsWith('/storage/') || avatarUrl.startsWith('storage/')) {
           final cleanPath = avatarUrl.startsWith('/') ? avatarUrl.substring(1) : avatarUrl;
-          avatarUrl = 'http://10.0.2.2:8000/$cleanPath';
+          avatarUrl = '${AppConfig.baseUrl}/$cleanPath';
         }
       }
     }
@@ -519,7 +520,7 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
                   child: Text(
                     professional['company_name']?[0]?.toUpperCase() ?? 'N',
                     style: GoogleFonts.poppins(
-                      color: const Color(0xFF4CAF50),
+                      color: const Color(0xFFFFCC00),
                       fontWeight: FontWeight.w600,
                       fontSize: 18,
                     ),
@@ -539,7 +540,7 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
               child: Text(
                 professional['company_name']?[0]?.toUpperCase() ?? 'N',
                 style: GoogleFonts.poppins(
-                  color: const Color(0xFF4CAF50),
+                  color: const Color(0xFFFFCC00),
                   fontWeight: FontWeight.w600,
                   fontSize: 18,
                 ),

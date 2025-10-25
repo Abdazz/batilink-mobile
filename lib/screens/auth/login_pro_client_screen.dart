@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/auth_service.dart';
 import '../../services/session_service.dart';
+import '../../core/app_config.dart';
 
 class LoginProClientScreen extends StatefulWidget {
   const LoginProClientScreen({Key? key}) : super(key: key);
@@ -13,7 +14,7 @@ class LoginProClientScreen extends StatefulWidget {
 
 class _LoginProClientScreenState extends State<LoginProClientScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _authService = AuthService(baseUrl: 'http://10.0.2.2:8000');
+  final _authService = AuthService(baseUrl: AppConfig.baseUrl);
 
   String? _email, _password;
   bool _loading = false;
@@ -204,90 +205,62 @@ class _LoginProClientScreenState extends State<LoginProClientScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      resizeToAvoidBottomInset: true,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              'assets/images/onboarding_bg.jpg',
-              fit: BoxFit.cover,
-            ),
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [
-                      Color.fromARGB(220, 0, 0, 0),
-                      Color.fromARGB(140, 0, 0, 0),
-                      Color.fromARGB(60, 0, 0, 0),
-                      Colors.transparent,
-                    ],
-                    stops: [0.0, 0.25, 0.55, 1.0],
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 40),
+              // Logo et titre
+              Column(
+                children: [
+                  // Remplacer par votre logo
+                  Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).primaryColor.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.business_center_outlined,
+                      size: 50,
+                      color: Colors.blue,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Connexion Pro-Client',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 24,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Connectez-vous pour accéder à votre espace professionnel',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
-            ),
-          ),
-          SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
-              child: Form(
+              const SizedBox(height: 40),
+              // Formulaire de connexion
+              Form(
                 key: _formKey,
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Top bar with back and title
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        CircleAvatar(
-                          backgroundColor: Colors.black45,
-                          child: IconButton(
-                            icon: const Icon(Icons.arrow_back, color: Colors.white),
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                        ),
-                        const Text(
-                          'Batilink',
-                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(width: 40),
-                      ],
-                    ),
-                    const SizedBox(height: 36),
-                    // Center title
-                    Center(
-                      child: Column(
-                        children: const [
-                          Icon(Icons.people_outline, color: Colors.white70, size: 48),
-                          SizedBox(height: 8),
-                          Text(
-                            'Connexion Pro-Client',
-                            style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 32),
                     // Email field
                     TextFormField(
                       decoration: InputDecoration(
-                        hintText: 'Email',
-                        hintStyle: TextStyle(color: Colors.white70),
-                        filled: true,
-                        fillColor: Colors.white.withOpacity(0.2),
+                        labelText: 'Email',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
                         ),
-                        prefixIcon: Icon(Icons.email, color: Colors.white70),
+                        prefixIcon: Icon(Icons.email),
                       ),
-                      style: TextStyle(color: Colors.white),
                       keyboardType: TextInputType.emailAddress,
                       validator: (value) {
                         if (value?.isEmpty ?? true) return 'Email requis';
@@ -302,17 +275,12 @@ class _LoginProClientScreenState extends State<LoginProClientScreen> {
                     // Password field
                     TextFormField(
                       decoration: InputDecoration(
-                        hintText: 'Mot de passe',
-                        hintStyle: TextStyle(color: Colors.white70),
-                        filled: true,
-                        fillColor: Colors.white.withOpacity(0.2),
+                        labelText: 'Mot de passe',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
                         ),
-                        prefixIcon: Icon(Icons.lock, color: Colors.white70),
+                        prefixIcon: Icon(Icons.lock),
                       ),
-                      style: TextStyle(color: Colors.white),
                       obscureText: true,
                       validator: (value) {
                         if (value?.isEmpty ?? true) return 'Mot de passe requis';
@@ -323,10 +291,18 @@ class _LoginProClientScreenState extends State<LoginProClientScreen> {
                     ),
                     if (_error != null) ...[
                       const SizedBox(height: 16),
-                      Text(
-                        _error!,
-                        style: TextStyle(color: Colors.red, fontSize: 14),
-                        textAlign: TextAlign.center,
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: Text(
+                          _error!,
+                          style: TextStyle(color: Colors.red.shade700, fontSize: 14),
+                          textAlign: TextAlign.center,
+                        ),
                       ),
                     ],
                     const SizedBox(height: 32),
@@ -337,18 +313,18 @@ class _LoginProClientScreenState extends State<LoginProClientScreen> {
                       child: ElevatedButton(
                         onPressed: _loading ? null : _submit,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.blue,
+                          backgroundColor: Theme.of(context).primaryColor,
+                          foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
                         child: _loading
                             ? const SizedBox(
-                                width: 24,
-                                height: 24,
+                                width: 20,
+                                height: 20,
                                 child: CircularProgressIndicator(
-                                  color: Colors.blue,
+                                  color: Colors.white,
                                   strokeWidth: 2,
                                 ),
                               )
@@ -365,19 +341,26 @@ class _LoginProClientScreenState extends State<LoginProClientScreen> {
                     // Forgot password
                     Center(
                       child: TextButton(
-                        onPressed: () {},
-                        child: const Text(
-                          'Mot de passe oublié ?',
-                          style: TextStyle(color: Colors.white70),
-                        ),
+                        onPressed: () {
+                          // TODO: Implement forgot password
+                        },
+                        child: const Text('Mot de passe oublié ?'),
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
+              const SizedBox(height: 24),
+              // Bouton retour
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                child: const Text('Retour'),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

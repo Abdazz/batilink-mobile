@@ -380,10 +380,10 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Color(0xFFFFCC00),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFFFFCC00)),
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF1E3A5F)),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
@@ -409,8 +409,8 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    const Color(0xFFFFCC00).withOpacity(0.15),
-                    const Color(0xFFFFCC00).withOpacity(0.08),
+                    const Color(0xFF1E3A5F).withValues(),
+                    const Color(0xFF1E3A5F).withValues(),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(20),
@@ -480,7 +480,7 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
                           style: GoogleFonts.poppins(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
-                            color: Colors.black87,
+                            color: const Color(0xFFFFCC00),
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -530,12 +530,12 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: const Color(0xFFFFCC00).withOpacity(0.2),
+                  color: const Color(0xFF1E3A5F).withOpacity(0.2),
                   width: 1.5,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFFFCC00).withOpacity(0.08),
+                    color: const Color(0xFF1E3A5F).withValues(),
                     spreadRadius: 2,
                     blurRadius: 10,
                     offset: const Offset(0, 4),
@@ -848,13 +848,13 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
                   colors: [
-                    const Color(0xFFFFCC00),
-                    const Color(0xFFFFCC00).withOpacity(0.9),
+                    const Color(0xFF1E3A5F),
+                    const Color(0xFF1E3A5F).withValues(),
                   ],
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFFFCC00).withOpacity(0.3),
+                    color: const Color(0xFF1E3A5F).withValues(),
                     spreadRadius: 3,
                     blurRadius: 12,
                     offset: const Offset(0, 6),
@@ -965,13 +965,13 @@ class QuoteSuccessScreen extends StatelessWidget {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    const Color.fromARGB(255, 0, 255, 21).withValues(),
-                    const Color(0xFFFFCC00).withOpacity(0.08),
+                    const Color(0xFF1E3A5F).withValues(),
+                    const Color(0xFF1E3A5F).withValues(),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: const Color(0xFFFFCC00).withOpacity(0.3),
+                  color: const Color(0xFF1E3A5F).withValues(),
                   width: 2,
                 ),
                 boxShadow: [
@@ -1015,7 +1015,7 @@ class QuoteSuccessScreen extends StatelessWidget {
                     style: GoogleFonts.poppins(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
-                      color: Colors.black87,
+                      color: Colors.white,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -1030,7 +1030,7 @@ class QuoteSuccessScreen extends StatelessWidget {
                       'Le professionnel va examiner votre demande et vous répondre prochainement.',
                       style: GoogleFonts.poppins(
                         fontSize: 16,
-                        color: const Color.fromARGB(255, 31, 28, 17),
+                        color: const Color(0xFFFFCC00).withValues(),
                         fontWeight: FontWeight.w500,
                       ),
                       textAlign: TextAlign.center,
@@ -1056,11 +1056,11 @@ class QuoteSuccessScreen extends StatelessWidget {
             // Informations du professionnel
             Card(
               elevation: 4,
-              shadowColor: const Color(0xFFFFCC00).withOpacity(0.1),
+              shadowColor: const Color(0xFF1E3A5F).withValues(),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
                 side: BorderSide(
-                  color: const Color(0xFFFFCC00).withOpacity(0.2),
+                  color: const Color(0xFF1E3A5F).withValues(),
                   width: 1,
                 ),
               ),
@@ -1074,7 +1074,7 @@ class QuoteSuccessScreen extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFFCC00).withOpacity(0.15),
+                            color: const Color(0xFF1E3A5F).withValues(),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: const Icon(
@@ -1089,7 +1089,7 @@ class QuoteSuccessScreen extends StatelessWidget {
                           style: GoogleFonts.poppins(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: const Color(0xFFFFCC00),
+                            color: const Color(0xFF1E3A5F),
                           ),
                         ),
                       ],
@@ -1121,11 +1121,11 @@ class QuoteSuccessScreen extends StatelessWidget {
             // Description
             Card(
               elevation: 4,
-              shadowColor: const Color(0xFFFFCC00).withOpacity(0.1),
+              shadowColor: const Color(0xFF1E3A5F).withValues(),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
                 side: BorderSide(
-                  color: const Color(0xFFFFCC00).withOpacity(0.2),
+                  color: const Color(0xFF1E3A5F).withValues(),
                   width: 1,
                 ),
               ),
@@ -1139,7 +1139,7 @@ class QuoteSuccessScreen extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFFCC00).withOpacity(0.15),
+                            color: const Color(0xFF1E3A5F).withValues(),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: const Icon(
@@ -1154,7 +1154,7 @@ class QuoteSuccessScreen extends StatelessWidget {
                           style: GoogleFonts.poppins(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: const Color(0xFFFFCC00),
+                            color: const Color(0xFF1E3A5F),
                           ),
                         ),
                       ],
@@ -1178,11 +1178,11 @@ class QuoteSuccessScreen extends StatelessWidget {
             // Date proposée
             Card(
               elevation: 4,
-              shadowColor: const Color(0xFFFFCC00).withOpacity(0.1),
+              shadowColor: const Color(0xFF1E3A5F).withValues(),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
                 side: BorderSide(
-                  color: const Color(0xFFFFCC00).withOpacity(0.2),
+                  color: const Color(0xFF1E3A5F).withValues(),
                   width: 1,
                 ),
               ),
@@ -1193,11 +1193,11 @@ class QuoteSuccessScreen extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFCC00).withOpacity(0.15),
+                        color: const Color(0xFF1E3A5F).withValues(),
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFFFFCC00).withOpacity(0.2),
+                            color: const Color(0xFF1E3A5F).withValues(),
                             spreadRadius: 1,
                             blurRadius: 4,
                             offset: const Offset(0, 2),
@@ -1220,7 +1220,7 @@ class QuoteSuccessScreen extends StatelessWidget {
                             style: GoogleFonts.poppins(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
-                              color: const Color(0xFFFFCC00),
+                              color: const Color(0xFF1E3A5F),
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -1394,13 +1394,13 @@ class QuoteSuccessScreen extends StatelessWidget {
                         begin: Alignment.centerLeft,
                         end: Alignment.centerRight,
                         colors: [
-                          const Color(0xFFFFCC00),
-                          const Color(0xFFFFCC00).withOpacity(0.9),
+                          const Color(0xFF1E3A5F).withValues(),
+                          const Color(0xFF1E3A5F).withValues(),
                         ],
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFFFFCC00).withOpacity(0.3),
+                          color: const Color(0xFF1E3A5F).withValues(),
                           spreadRadius: 2,
                           blurRadius: 10,
                           offset: const Offset(0, 4),

@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/pro_client_service.dart';
 import '../../services/auth_service.dart';
+import '../../core/app_config.dart';
 
 class ProClientDashboardScreen extends StatefulWidget {
   final String token;
@@ -35,8 +36,8 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
   int _totalPendingQuotations = 0;
 
   final ProClientService _proClientService = ProClientService(
-    baseUrl: 'http://10.0.2.2:8000',
-    authService: AuthService(baseUrl: 'http://10.0.2.2:8000'),
+    baseUrl: AppConfig.baseUrl,
+    authService: AuthService(baseUrl: AppConfig.baseUrl),
   );
 
   @override
@@ -138,10 +139,10 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFE5E5E5),
+      backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFFFCC00),
         title: Text(
           'Tableau de bord Pro-Client',
           style: GoogleFonts.poppins(
@@ -265,7 +266,7 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(20),
                 decoration: const BoxDecoration(
                   color: Colors.white24,
                   shape: BoxShape.circle,
@@ -280,7 +281,7 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
                     Text(
                       'Bonjour, ${_profileData?['user']?['first_name'] ?? 'Pro-Client'}',
                       style: GoogleFonts.poppins(
-                        color: Colors.white,
+                        color: const Color(0xFF1E3A5F).withValues(),
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
                       ),
@@ -289,7 +290,7 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
                     Text(
                       'Bienvenue sur votre espace hybride',
                       style: GoogleFonts.poppins(
-                        color: Colors.white.withOpacity(0.9),
+                        color: const Color(0xFF1E3A5F).withValues(),
                         fontSize: 14,
                       ),
                     ),
@@ -324,12 +325,12 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
       ),
       child: Column(
         children: [
-          Icon(icon, color: Colors.white, size: 24),
+          Icon(icon, color: const Color(0xFF1E3A5F).withValues(), size: 24),
           const SizedBox(height: 8),
           Text(
             title,
             style: GoogleFonts.poppins(
-              color: Colors.white,
+              color: const Color(0xFF1E3A5F).withValues(),
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -338,7 +339,7 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
           Text(
             subtitle,
             style: GoogleFonts.poppins(
-              color: Colors.white.withOpacity(0.8),
+              color: const Color(0xFF1E3A5F).withValues().withOpacity(0.8),
               fontSize: 10,
             ),
             textAlign: TextAlign.center,

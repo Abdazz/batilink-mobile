@@ -1,3 +1,5 @@
+import '../core/app_config.dart';
+
 class Professional {
   final String id;
   final String firstName;
@@ -91,9 +93,8 @@ class Professional {
 
     // Si c'est un chemin relatif, construire l'URL complète Laravel
     if (avatarUrl!.startsWith('/storage/') || avatarUrl!.startsWith('storage/')) {
-      // Éviter le double slash en supprimant le slash initial si nécessaire
-      final cleanPath = avatarUrl!.startsWith('/') ? avatarUrl!.substring(1) : avatarUrl!;
-      final fullUrl = 'http://10.0.2.2:8000/$cleanPath';
+      // Utiliser AppConfig pour construire l'URL des médias
+      final fullUrl = AppConfig.buildMediaUrl(avatarUrl!.startsWith('/') ? avatarUrl! : '/$avatarUrl');
       print('Chemin relatif converti en URL complète: $fullUrl');
       return fullUrl;
     }

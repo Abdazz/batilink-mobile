@@ -1,7 +1,5 @@
 import 'sign_up_screen.dart';
 import 'package:flutter/material.dart';
-
-import '../../constants.dart';
 import 'components/sign_in_form.dart';
 
 class SignInScreen extends StatefulWidget {

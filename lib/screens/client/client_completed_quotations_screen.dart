@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:batilink_mobile_app/constants.dart' as AppConfig;
 import 'package:batilink_mobile_app/screens/client/client_dashboard_screen.dart';
 import 'package:batilink_mobile_app/screens/client/client_profile_screen.dart';
 import 'package:batilink_mobile_app/screens/client/professional_search_screen.dart';
@@ -116,7 +117,7 @@ class _ClientCompletedQuotationsScreenState extends State<ClientCompletedQuotati
       }
 
       final response = await http.get(
-        Uri.parse('http://10.0.2.2:8000/api/quotations'),
+        Uri.parse('${AppConfig.baseUrl}/api/quotations'),
         headers: {
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
@@ -404,7 +405,7 @@ class _ClientCompletedQuotationsScreenState extends State<ClientCompletedQuotati
       if (!avatarUrl.startsWith('http://') && !avatarUrl.startsWith('https://')) {
         if (avatarUrl.startsWith('/storage/') || avatarUrl.startsWith('storage/')) {
           final cleanPath = avatarUrl.startsWith('/') ? avatarUrl.substring(1) : avatarUrl;
-          avatarUrl = 'http://10.0.2.2:8000/$cleanPath';
+          avatarUrl = '${AppConfig.baseUrl}/$cleanPath';
         }
       }
     }

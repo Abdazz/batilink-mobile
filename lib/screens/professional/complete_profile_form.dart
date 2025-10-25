@@ -5,6 +5,7 @@ import 'package:form_field_validator/form_field_validator.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
+import '../../core/app_config.dart';
 
 class CompleteProfileForm extends StatefulWidget {
   final Map<String, dynamic>? initialData;
@@ -107,7 +108,7 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
 
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('http://10.0.2.2:8000/api/upload'),
+        Uri.parse('${AppConfig.baseUrl}/api/upload'),
       );
 
       request.files.add(await http.MultipartFile.fromPath(
@@ -291,6 +292,10 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                   Navigator.of(context).pop();
                 }
               },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFCC00),
+                foregroundColor: Colors.white,
+              ),
               child: const Text('Ajouter'),
             ),
           ],
@@ -453,7 +458,7 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                                 icon: const Icon(Icons.photo_camera, size: 16),
                                 label: Text(_profilePhotoPath != null ? 'Changer la photo' : 'Ajouter une photo'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _profilePhotoPath != null ? Colors.orange : Colors.blue,
+                                  backgroundColor: _profilePhotoPath != null ? const Color(0xFFFFCC00) : const Color(0xFFFFCC00),
                                   foregroundColor: Colors.white,
                                 ),
                               ),
@@ -570,6 +575,10 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                       onPressed: _pickDocument,
                       icon: const Icon(Icons.upload_file),
                       label: const Text('Sélectionner un document'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFFCC00),
+                        foregroundColor: Colors.white,
+                      ),
                     ),
                   ],
                 ),
@@ -596,6 +605,10 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                       onPressed: _showAddSkillDialog,
                       icon: const Icon(Icons.add),
                       label: const Text('Ajouter une compétence'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFFCC00),
+                        foregroundColor: Colors.white,
+                      ),
                     ),
                   ],
                 ),
@@ -770,6 +783,7 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                           _isAvailable = value;
                         });
                       },
+                      activeColor: const Color(0xFFFFCC00),
                     ),
                   ],
                 ),
@@ -865,6 +879,8 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
               onPressed: widget.isLoading ? null : _submitForm,
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: const Color(0xFFFFCC00),
+                foregroundColor: Colors.white,
               ),
               child: widget.isLoading
                   ? const SizedBox(

@@ -1,3 +1,6 @@
+import 'package:batilink_mobile_app/screens/pro_client/pro_client_profile_screen.dart';
+
+import 'core/app_config.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/auth_service.dart';
@@ -15,21 +18,22 @@ import 'screens/pro_client/pro_client_dashboard_screen.dart';
 import 'screens/pro_client/pro_client_create_quotation_screen.dart';
 import 'screens/pro_client/pro_client_quotations_screen.dart';
 import 'screens/pro_client/pro_client_respond_quotations_screen.dart';
-import 'screens/pro_client/pro_client_profile_screen.dart';
+import 'screens/pro_client/professional_profile_screen.dart';
 import 'screens/client/client_dashboard_screen.dart';
 import 'screens/client/auth/client_sign_in_screen.dart';
 import 'screens/client/auth/client_sign_up_screen.dart';
 import 'screens/client/client_profile_screen.dart';
-import 'screens/client/client_quotations_screen.dart';
 import 'screens/client/client_completed_quotations_screen.dart';
 import 'screens/client/professional_search_screen.dart';
+import 'screens/client/client_quotations_screen.dart';
+import 'screens/client/client_favorites_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Création de l'instance d'AuthService avec l'URL de base
   final authService = AuthService(
-    baseUrl: 'http://10.0.2.2:8000', // URL locale pour développement
+    baseUrl: AppConfig.baseUrl,
   );
 
   runApp(
@@ -108,6 +112,13 @@ class MyApp extends StatelessWidget {
             userData: args?['userData'] ?? <String, dynamic>{},
           );
         },
+        '/pro-client/professional-profile': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return ProfessionalProfileScreen(
+            token: args?['token'] ?? '',
+            userData: args?['userData'] ?? <String, dynamic>{},
+          );
+        },
         '/client/login': (context) => const ClientSignInScreen(),
         '/client/register': (context) => const ClientSignUpScreen(),
         '/client/dashboard': (context) {
@@ -121,6 +132,13 @@ class MyApp extends StatelessWidget {
         '/client/profile': (context) {
           final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
           return ClientProfileScreen(
+            token: args?['token'] ?? '',
+            userData: args?['userData'] ?? <String, dynamic>{},
+          );
+        },
+        '/client/favorites': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return ClientFavoritesScreen(
             token: args?['token'] ?? '',
             userData: args?['userData'] ?? <String, dynamic>{},
           );

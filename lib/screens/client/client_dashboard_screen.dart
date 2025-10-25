@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/professional.dart';
 import '../../services/professional_service.dart';
 import '../../services/client_dashboard_service.dart';
+import '../../core/app_config.dart';
 import 'professional_search_screen.dart';
 import 'client_completed_quotations_screen.dart';
 import 'client_profile_screen.dart';
@@ -34,8 +35,8 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
   // Statistiques du profil client
   int _totalJobs = 0;
 
-  final ProfessionalService _professionalService = ProfessionalService(baseUrl: 'http://10.0.2.2:8000');
-  final ClientDashboardService _dashboardService = ClientDashboardService(baseUrl: 'http://10.0.2.2:8000');
+  final ProfessionalService _professionalService = ProfessionalService(baseUrl: AppConfig.baseUrl);
+  final ClientDashboardService _dashboardService = ClientDashboardService(baseUrl: AppConfig.baseUrl);
 
   @override
   void initState() {
@@ -53,7 +54,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
       if (token.isEmpty) return;
 
       final response = await http.get(
-        Uri.parse('http://10.0.2.2:8000/api/client/stats'),
+        Uri.parse('${AppConfig.baseUrl}/api/client/stats'),
         headers: {
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',

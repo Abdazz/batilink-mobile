@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../services/auth_service.dart';
+import '../../core/app_config.dart';
 import 'quotation_detail_screen.dart';
 
 class QuotationsScreen extends StatefulWidget {
@@ -16,7 +17,7 @@ class QuotationsScreen extends StatefulWidget {
 }
 
 class _QuotationsScreenState extends State<QuotationsScreen> {
-  final AuthService _authService = AuthService(baseUrl: 'http://10.0.2.2:8000');
+  final AuthService _authService = AuthService(baseUrl: AppConfig.baseUrl);
   List<dynamic> _quotations = [];
   bool _isLoading = true;
   String _error = '';
@@ -70,16 +71,16 @@ class _QuotationsScreenState extends State<QuotationsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFFFCC00),
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF4CAF50)),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        // leading: IconButton(
+        //   icon: const Icon(Icons.arrow_back, color: Colors.white),
+        //   onPressed: () => Navigator.of(context).pop(),
+        // ),
         title: Text(
           'Mes devis reçus',
           style: GoogleFonts.poppins(
-            color: Colors.black87,
+            color: Colors.white,
             fontSize: 20,
             fontWeight: FontWeight.w600,
           ),
@@ -87,11 +88,12 @@ class _QuotationsScreenState extends State<QuotationsScreen> {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFF4CAF50)),
+            icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _fetchQuotations,
           ),
         ],
       ),
+      backgroundColor: const Color(0xFFE5E5E5),
       body: _buildBody(),
     );
   }
@@ -120,7 +122,7 @@ class _QuotationsScreenState extends State<QuotationsScreen> {
             ElevatedButton(
               onPressed: _fetchQuotations,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4CAF50),
+                backgroundColor: const Color(0xFFFFCC00),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -247,15 +249,15 @@ class _QuotationsScreenState extends State<QuotationsScreen> {
                     height: 48,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: const Color(0xFF4CAF50).withOpacity(0.1),
+                      color: const Color(0xFFFFCC00).withOpacity(0.1),
                       border: Border.all(
-                        color: const Color(0xFF4CAF50),
+                        color: const Color(0xFFFFCC00),
                         width: 2,
                       ),
                     ),
                     child: const Icon(
                       Icons.person,
-                      color: Color(0xFF4CAF50),
+                      color: Color(0xFFFFCC00),
                       size: 24,
                     ),
                   ),
@@ -331,7 +333,7 @@ class _QuotationsScreenState extends State<QuotationsScreen> {
                       style: GoogleFonts.poppins(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: const Color(0xFF4CAF50),
+                        color: const Color(0xFFFFCC00),
                       ),
                     ),
                 ],
@@ -347,7 +349,7 @@ class _QuotationsScreenState extends State<QuotationsScreen> {
                     'Voir les détails',
                     style: GoogleFonts.poppins(
                       fontSize: 12,
-                      color: const Color(0xFF4CAF50),
+                      color: const Color(0xFFFFCC00),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -355,7 +357,7 @@ class _QuotationsScreenState extends State<QuotationsScreen> {
                   const Icon(
                     Icons.arrow_forward_ios,
                     size: 12,
-                    color: Color(0xFF4CAF50),
+                    color: Color(0xFFFFCC00),
                   ),
                 ],
               ),
@@ -369,7 +371,7 @@ class _QuotationsScreenState extends State<QuotationsScreen> {
   Color _getStatusColor(String status) {
     switch (status) {
       case 'pending':
-        return Colors.orange;
+        return const Color(0xFFFFCC00); // Jaune au lieu d'orange
       case 'accepted':
         return Colors.green;
       case 'rejected':
