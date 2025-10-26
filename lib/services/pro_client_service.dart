@@ -221,6 +221,24 @@ class ProClientService {
 
   // ==================== QUOTATIONS (endpoints existants) ====================
 
+  Future<http.Response> getQuotationById({
+    required String accessToken,
+    required String quotationId,
+  }) async {
+    final url = Uri.parse('${effectiveBaseUrl}/api/quotations/$quotationId');
+    final response = await http.get(
+      url,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    );
+
+    print('Réponse quotation par ID: ${response.statusCode}');
+    print('URL appelée: $url');
+    return response;
+  }
+
   Future<http.Response> getQuotations({
     required String accessToken,
     String? context, // 'client', 'professional', ou null pour automatique

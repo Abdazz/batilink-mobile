@@ -6,11 +6,13 @@ import '../../services/pro_client_service.dart';
 class ProClientRespondQuotationsScreen extends StatefulWidget {
   final String? token;
   final Map<String, dynamic>? userData;
+  final String? filterMode; // 'pending' (devis à répondre) ou 'active' (jobs pro)
 
   const ProClientRespondQuotationsScreen({
     Key? key,
     this.token,
     this.userData,
+    this.filterMode,
   }) : super(key: key);
 
   @override
@@ -98,8 +100,17 @@ class _ProClientRespondQuotationsScreenState extends State<ProClientRespondQuota
       if (response.statusCode == 200) {
         final data = await _proClientService.parseProClientProfileResponse(response);
         if (data != null && data['quotations'] != null) {
+          var list = List<dynamic>.from(data['quotations'] as List<dynamic>);
+          // Appliquer filtre selon filterMode
+          final mode = widget.filterMode ?? 'pending';
+          if (mode == 'pending') {
+            list = list.where((q) => (q['status']?.toString().toLowerCase() ?? '') == 'pending').toList();
+          } else if (mode == 'active') {
+            const activeStatuses = {'accepted', 'in_progress', 'completed', 'cancelled'};
+            list = list.where((q) => activeStatuses.contains((q['status']?.toString().toLowerCase() ?? ''))).toList();
+          }
           setState(() {
-            _quotations = data['quotations'] as List<dynamic>;
+            _quotations = list;
           });
         } else {
           setState(() {
@@ -118,11 +129,12 @@ class _ProClientRespondQuotationsScreenState extends State<ProClientRespondQuota
 
   @override
   Widget build(BuildContext context) {
+    final mode = widget.filterMode ?? 'pending';
     return Scaffold(
       appBar: AppBar(
         title: Row(
           children: [
-            const Text('Répondre aux devis'),
+            Text(mode == 'active' ? 'Mes jobs (pro)' : 'Répondre aux devis'),
             const SizedBox(width: 8),
             if (_isProClient)
               Container(

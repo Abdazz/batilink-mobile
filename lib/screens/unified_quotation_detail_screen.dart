@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../services/api_service.dart';
 import '../../core/app_config.dart';
 
@@ -45,6 +46,8 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
   final TextEditingController _reviewCommentController = TextEditingController();
   final TextEditingController _materialsUsedController = TextEditingController();
 
+  Map<String, dynamic>? _currentQuotation;
+
   DateTime _selectedStartDate = DateTime.now();
   DateTime _selectedCompletionDate = DateTime.now();
   DateTime _selectedCancellationDate = DateTime.now();
@@ -70,6 +73,114 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
   List<File> _completionPhotos = [];
   List<File> _cancellationPhotos = [];
   List<File> _reviewPhotos = [];
+  List<File> _acceptancePhotos = [];
+
+  final TextEditingController _quoteAmountController = TextEditingController();
+  final TextEditingController _quoteNotesController = TextEditingController();
+  DateTime? _quoteProposedDate;
+
+  bool _fileTooLarge(File f, int maxBytes) => f.lengthSync() > maxBytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentQuotation = Map<String, dynamic>.from(widget.quotation);
+  }
+
+  Map<String, String>? _imageHeaders() {
+    final t = widget.token;
+    if (t.isNotEmpty) {
+      return {'Authorization': 'Bearer $t'};
+    }
+    return null;
+  }
+
+  String _resolveMediaUrl(String? raw) {
+    if (raw == null || raw.isEmpty) return '';
+    if (raw.contains('via.placeholder.com') || raw.contains('placeholder')) return '';
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    // Toute URL relative: utiliser AppConfig.buildMediaUrl
+    try {
+      final path = raw.startsWith('/') ? raw : '/$raw';
+      final full = AppConfig.buildMediaUrl(path);
+      // Debug
+      // ignore: avoid_print
+      print('Resolved media URL: $raw -> $full');
+      return full;
+    } catch (_) {
+      // Fallback ancien comportement storage
+      if (raw.startsWith('/storage/') || raw.startsWith('storage/')) {
+        final cleanPath = raw.startsWith('/') ? raw.substring(1) : raw;
+        return '${AppConfig.baseUrl}/$cleanPath';
+      }
+      return raw;
+    }
+  }
+
+  List<String> _extractPhotoUrls(dynamic source) {
+    final List<String> urls = [];
+    if (source == null) return urls;
+
+    dynamic raw = source;
+    // Si string JSON
+    if (raw is String) {
+      final s = raw.trim();
+      if (s.startsWith('[') && s.endsWith(']')) {
+        try {
+          final decoded = json.decode(s);
+          raw = decoded;
+        } catch (_) {
+          // string non JSON: peut-être CSV
+          final parts = s.split(',');
+          for (final p in parts) {
+            final u = _resolveMediaUrl(p.trim());
+            if (u.isNotEmpty) urls.add(u);
+          }
+          return urls;
+        }
+      } else {
+        // Single path string
+        final u = _resolveMediaUrl(s);
+        if (u.isNotEmpty) urls.add(u);
+        return urls;
+      }
+    }
+
+    // Si liste
+    if (raw is List) {
+      for (final item in raw) {
+        if (item is String) {
+          final u = _resolveMediaUrl(item);
+          if (u.isNotEmpty) urls.add(u);
+        } else if (item is Map) {
+          final u = _resolveMediaUrl(
+            item['url']?.toString() ?? item['path']?.toString() ?? item['full_url']?.toString() ?? item['src']?.toString(),
+          );
+          if (u.isNotEmpty) urls.add(u);
+        }
+      }
+      return urls;
+    }
+
+    // Si map, chercher différentes clés possibles
+    if (raw is Map) {
+      final keys = ['review_photos', 'proof_photos', 'start_photos', 'completion_photos', 'cancellation_photos', 'photos', 'images', 'files'];
+      for (final k in keys) {
+        if (raw[k] != null) {
+          urls.addAll(_extractPhotoUrls(raw[k]));
+        }
+      }
+      // Si map représente directement un fichier unique
+      if (urls.isEmpty) {
+        final u = _resolveMediaUrl(
+          raw['url']?.toString() ?? raw['path']?.toString() ?? raw['full_url']?.toString() ?? raw['src']?.toString(),
+        );
+        if (u.isNotEmpty) urls.add(u);
+      }
+    }
+
+    return urls;
+  }
 
   void _clearTempData() {
     _tempStartDate = null;
@@ -86,6 +197,20 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     _tempCancellationPhotosCount = null;
   }
 
+  Future<void> _refreshQuotation(String token) async {
+    try {
+      final resp = await ApiService.getWithToken('quotations/${widget.quotationId}', token: token);
+      if (resp != null && resp['data'] != null) {
+        setState(() {
+          _currentQuotation = Map<String, dynamic>.from(resp['data']);
+        });
+      }
+    } catch (e) {
+      // On ignore l'erreur de rafraîchissement pour ne pas bloquer l'UX
+      print('Erreur rafraîchissement quotation: $e');
+    }
+  }
+
   Future<void> _respondToQuotation(String status) async {
     if (_isLoading) return;
 
@@ -95,18 +220,27 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     });
 
     try {
-      print('Tentative de réponse - Statut actuel du devis: ${widget.quotation['status']}');
+      final q = _currentQuotation ?? widget.quotation;
+      print('Tentative de réponse - Statut actuel du devis: ${q['status']}');
       print('ID du devis: ${widget.quotationId}');
       print('Contexte: ${widget.context}');
 
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token') ?? widget.token;
+      final token = prefs.getString('token') ?? prefs.getString('access_token') ?? widget.token;
 
       // Différentes logiques selon le contexte
       if (widget.context == QuotationContext.professional) {
         await _respondAsProfessional(status, token);
       } else {
-        await _respondAsClient(status, token);
+        if (status == 'accepted') {
+          // S'assurer que les boutons du popup ne sont pas désactivés
+          if (_isLoading) {
+            setState(() => _isLoading = false);
+          }
+          await _handleClientAcceptance(token);
+        } else {
+          await _respondAsClient(status, token);
+        }
       }
     } catch (e) {
       print('Erreur lors de la réponse: $e');
@@ -128,74 +262,197 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
   }
 
   Future<void> _respondAsProfessional(String status, String token) async {
-    final Map<String, dynamic> requestData = {};
-
-    if (status == 'accepted') {
-      requestData.addAll({
-        'amount': 0.0,
-        'professional_notes': '',
-        'proposed_date': DateTime.now().add(Duration(days: 7)).toIso8601String().split('T')[0],
-        'professional_id': widget.quotation['professional']?['id'] ?? widget.quotation['professional_id'],
-        'description': widget.quotation['description'],
-      });
-    } else if (status == 'rejected') {
-      requestData.addAll({
-        'professional_notes': 'Demande refusée par le professionnel',
-        'professional_id': widget.quotation['professional']?['id'] ?? widget.quotation['professional_id'],
-        'description': widget.quotation['description'],
-      });
+    if (status != 'accepted' && status != 'rejected') {
+      throw Exception('Action non supportée pour le professionnel');
     }
 
-    final response = await ApiService.post(
-      'quotations/${widget.quotationId}',
-      data: requestData,
-    );
+    if (status == 'accepted') {
+      // S'assurer que les boutons du popup ne sont pas désactivés
+      if (_isLoading) {
+        setState(() => _isLoading = false);
+      }
+      await _showQuoteDialog(token);
+      return;
+    }
 
-    if (response != null) {
-      _showSuccessMessage(status);
+    // Rejet simple (notes optionnelles)
+    final url = Uri.parse('${AppConfig.baseUrl}/api/quotations/${widget.quotationId}');
+    final q = _currentQuotation ?? widget.quotation;
+    final professionalId = q['professional_id'] ?? q['professional']?['id'];
+    final response = await http.put(
+      url,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: json.encode({
+        'professional_notes': 'Demande refusée par le professionnel',
+        if (professionalId != null) 'professional_id': professionalId,
+        if (q['description'] != null) 'description': q['description'],
+        'status': 'rejected',
+      }),
+    );
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      _showSuccessMessage('rejected');
       Navigator.of(context).pop(true);
     } else {
-      throw Exception('Réponse inattendue du serveur');
+      throw Exception('Erreur serveur (${response.statusCode}): ${response.body}');
+    }
+  }
+
+  Future<void> _showQuoteDialog(String token) async {
+    _quoteAmountController.text = '';
+    _quoteNotesController.text = '';
+    _quoteProposedDate = null;
+
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text('Proposer un devis', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: _quoteAmountController,
+                      keyboardType: TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Montant (obligatoire)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _quoteNotesController,
+                      decoration: const InputDecoration(
+                        labelText: 'Notes (≤ 1000 caractères)',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLength: 1000,
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      children: [
+                        Text('Date proposée (optionnel): ', style: GoogleFonts.poppins()),
+                        TextButton(
+                          onPressed: () async {
+                            final now = DateTime.now();
+                            final date = await showDatePicker(
+                              context: context,
+                              initialDate: now.add(const Duration(days: 1)),
+                              firstDate: now.add(const Duration(days: 1)),
+                              lastDate: now.add(const Duration(days: 365)),
+                            );
+                            if (date != null) {
+                              setState(() => _quoteProposedDate = date);
+                            }
+                          },
+                          child: Text(
+                            _quoteProposedDate != null
+                                ? DateFormat('dd/MM/yyyy').format(_quoteProposedDate!)
+                                : 'Choisir',
+                            style: GoogleFonts.poppins(color: Colors.blue, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+
+          
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text('Annuler', style: GoogleFonts.poppins()),
+                ),
+                ElevatedButton(
+                  onPressed: _isLoading
+                      ? null
+                      : () async {
+                          final amountText = _quoteAmountController.text.trim().replaceAll(',', '.');
+                          if (amountText.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Le montant est obligatoire'), backgroundColor: Colors.red),
+                            );
+                            return;
+                          }
+                          final amount = double.tryParse(amountText);
+                          if (amount == null || amount <= 0) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Montant invalide'), backgroundColor: Colors.red),
+                            );
+                            return;
+                          }
+
+                          Navigator.of(context).pop();
+                          await _submitProfessionalQuote(token, amount: amount, notes: _quoteNotesController.text.trim(), proposedDate: _quoteProposedDate);
+                        },
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                  child: Text('Envoyer', style: GoogleFonts.poppins()),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _submitProfessionalQuote(String token, {required double amount, String? notes, DateTime? proposedDate}) async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+    try {
+      final url = Uri.parse('${AppConfig.baseUrl}/api/quotations/${widget.quotationId}');
+      final q = _currentQuotation ?? widget.quotation;
+      final professionalId = q['professional_id'] ?? q['professional']?['id'];
+      final payload = {
+        'amount': amount,
+        if (notes != null) 'professional_notes': notes,
+        if (notes != null) 'notes': notes,
+        if (proposedDate != null) 'proposed_date': DateFormat('yyyy-MM-dd').format(proposedDate),
+        if (professionalId != null) 'professional_id': professionalId,
+        if (q['description'] != null) 'description': q['description'],
+        'status': 'quoted',
+      };
+      final response = await http.put(
+        url,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(payload),
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        _showSuccessMessage('quoted');
+        await _refreshQuotation(token);
+        // Ne pas fermer l'écran de détails pour laisser voir les infos mises à jour
+      } else {
+        throw Exception('Erreur serveur (${response.statusCode}): ${response.body}');
+      }
+    } catch (e) {
+      setState(() => _errorMessage = 'Erreur lors de l\'envoi du devis: $e');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red));
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
   Future<void> _respondAsClient(String status, String token) async {
     if (status == 'accepted') {
-      Map<String, dynamic> acceptanceData = {
-        'acceptance_date': DateTime.now().toIso8601String().split('T')[0],
-        'client_notes': 'Devis accepté via l\'application mobile',
-      };
-
-      print('Données d\'acceptation envoyées: $acceptanceData');
-      print('ID client du devis: ${widget.quotation['client']?['id']}');
-
-      final response = await ApiService.post(
-        'quotations/${widget.quotationId}/accept',
-        data: acceptanceData,
-      );
-
-      print('Réponse serveur: $response');
-
-      if (response != null) {
-        if (response['success'] == true || response['status'] == 'success' || response['data'] != null) {
-          if (response['acceptance_proof'] != null) {
-            print('Détails d\'acceptation reçus: ${response['acceptance_proof']}');
-          }
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Devis accepté avec succès !'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          Navigator.of(context).pop(true);
-        } else {
-          print('Structure de réponse inattendue: $response');
-          throw Exception('Réponse inattendue du serveur: ${response.toString()}');
-        }
-      } else {
-        throw Exception('Données invalides');
-      }
+      // L'acceptation avec preuves est gérée par _handleClientAcceptance
+      return;
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -203,6 +460,137 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
           backgroundColor: Colors.orange,
         ),
       );
+    }
+  }
+
+  Future<void> _handleClientAcceptance(String token) async {
+    final TextEditingController _clientNotesController = TextEditingController(text: "Devis accepté via l'application mobile");
+    _acceptancePhotos = [];
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(builder: (context, setState) {
+          return AlertDialog(
+            title: Text('Accepter le devis', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: _clientNotesController,
+                    decoration: const InputDecoration(
+                      labelText: 'Notes du client (optionnel, ≤ 1000)',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLength: 1000,
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      final photos = await _picker.pickMultiImage();
+                      if (photos.isEmpty) return;
+                      final added = <File>[];
+                      for (final x in photos) {
+                        final f = File(x.path);
+                        if (_fileTooLarge(f, 5 * 1024 * 1024)) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Chaque photo doit être ≤ 5 Mo'), backgroundColor: Colors.red),
+                          );
+                          continue;
+                        }
+                        added.add(f);
+                      }
+                      setState(() {
+                        _acceptancePhotos.addAll(added);
+                      });
+                    },
+                    icon: const Icon(Icons.photo_camera),
+                    label: const Text('Ajouter des photos de preuve'),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.grey[200], foregroundColor: Colors.black),
+                  ),
+                  if (_acceptancePhotos.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text('${_acceptancePhotos.length} photo(s) sélectionnée(s)', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
+                  ]
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(context).pop(), child: Text('Annuler', style: GoogleFonts.poppins())),
+              ElevatedButton(
+                onPressed: _isLoading
+                    ? null
+                    : () async {
+                        Navigator.of(context).pop();
+                        await _submitClientAcceptance(token, clientNotes: _clientNotesController.text.trim());
+                      },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                child: Text('Confirmer', style: GoogleFonts.poppins()),
+              ),
+            ],
+          );
+        });
+      },
+    );
+  }
+
+  Future<void> _submitClientAcceptance(String token, {String? clientNotes}) async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+    try {
+      if (_acceptancePhotos.isNotEmpty) {
+        final request = http.MultipartRequest('POST', Uri.parse('${AppConfig.baseUrl}/api/quotations/${widget.quotationId}/accept'));
+        request.headers['Authorization'] = 'Bearer $token';
+        request.fields['acceptance_date'] = DateFormat('yyyy-MM-dd').format(DateTime.now());
+        if (clientNotes != null && clientNotes.isNotEmpty) request.fields['client_notes'] = clientNotes;
+        for (int i = 0; i < _acceptancePhotos.length; i++) {
+          final photo = _acceptancePhotos[i];
+          final multipartFile = await http.MultipartFile.fromPath(
+            'proof_photos[]',
+            photo.path,
+          );
+          request.files.add(multipartFile);
+        }
+        final resp = await request.send();
+        final body = await resp.stream.bytesToString();
+        if (resp.statusCode >= 200 && resp.statusCode < 300) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Devis accepté avec succès !'), backgroundColor: Colors.green));
+          await _refreshQuotation(token);
+          Navigator.of(context).pop(true);
+        } else {
+          throw Exception('Erreur serveur (${resp.statusCode}): $body');
+        }
+      } else {
+        final response = await http.post(
+          Uri.parse('${AppConfig.baseUrl}/api/quotations/${widget.quotationId}/accept'),
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: json.encode({
+            'acceptance_date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
+            if (clientNotes != null && clientNotes.isNotEmpty) 'client_notes': clientNotes,
+          }),
+        );
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Devis accepté avec succès !'), backgroundColor: Colors.green));
+          await _refreshQuotation(token);
+          Navigator.of(context).pop(true);
+        } else {
+          throw Exception('Erreur serveur (${response.statusCode}): ${response.body}');
+        }
+      }
+    } catch (e) {
+      setState(() => _errorMessage = 'Erreur lors de l\'acceptation: $e');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red));
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -264,8 +652,20 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                     ElevatedButton.icon(
                       onPressed: () async {
                         final photos = await _picker.pickMultiImage();
+                        if (photos.isEmpty) return;
+                        final added = <File>[];
+                        for (final x in photos) {
+                          final f = File(x.path);
+                          if (_fileTooLarge(f, 5 * 1024 * 1024)) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Chaque photo doit être ≤ 5 Mo'), backgroundColor: Colors.red),
+                            );
+                            continue;
+                          }
+                          added.add(f);
+                        }
                         setState(() {
-                          _startPhotos.addAll(photos.map((xfile) => File(xfile.path)));
+                          _startPhotos.addAll(added);
                           _tempStartPhotosCount = _startPhotos.length;
                         });
                                             },
@@ -366,6 +766,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
               backgroundColor: Colors.green,
             ),
           );
+          await _refreshQuotation(token);
           _clearTempData();
           Navigator.of(context).pop(true);
         } else {
@@ -473,8 +874,20 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                     ElevatedButton.icon(
                       onPressed: () async {
                         final photos = await _picker.pickMultiImage();
+                        if (photos.isEmpty) return;
+                        final added = <File>[];
+                        for (final x in photos) {
+                          final f = File(x.path);
+                          if (_fileTooLarge(f, 5 * 1024 * 1024)) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Chaque photo doit être ≤ 5 Mo'), backgroundColor: Colors.red),
+                            );
+                            continue;
+                          }
+                          added.add(f);
+                        }
                         setState(() {
-                          _completionPhotos.addAll(photos.map((xfile) => File(xfile.path)));
+                          _completionPhotos.addAll(added);
                           _tempCompletionPhotosCount = _completionPhotos.length;
                         });
                                             },
@@ -587,6 +1000,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                 backgroundColor: Colors.green,
               ),
             );
+            await _refreshQuotation(token);
             _clearTempData();
             Navigator.of(context).pop(true);
             return;
@@ -623,6 +1037,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
               backgroundColor: Colors.green,
             ),
           );
+          await _refreshQuotation(token);
           _clearTempData();
           Navigator.of(context).pop(true);
         } else {
@@ -715,8 +1130,20 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                     ElevatedButton.icon(
                       onPressed: () async {
                         final photos = await _picker.pickMultiImage();
+                        if (photos.isEmpty) return;
+                        final added = <File>[];
+                        for (final x in photos) {
+                          final f = File(x.path);
+                          if (_fileTooLarge(f, 5 * 1024 * 1024)) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Chaque justificatif doit être ≤ 5 Mo'), backgroundColor: Colors.red),
+                            );
+                            continue;
+                          }
+                          added.add(f);
+                        }
                         setState(() {
-                          _cancellationPhotos.addAll(photos.map((xfile) => File(xfile.path)));
+                          _cancellationPhotos.addAll(added);
                           _tempCancellationPhotosCount = _cancellationPhotos.length;
                         });
                                             },
@@ -769,36 +1196,58 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     });
 
     try {
-      final cancellationData = {
-        'cancellation_reason': _cancellationReasonController.text,
-        'cancellation_date': DateFormat('yyyy-MM-dd').format(_selectedCancellationDate),
-        'cancellation_proof': _cancellationPhotos.map((photo) => photo.path.split('/').last).toList(),
-      };
+      // Envoi multipart si des preuves sont présentes, sinon JSON
+      if (_cancellationPhotos.isNotEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        final token = prefs.getString('access_token') ?? widget.token;
 
-      print('Données d\'annulation envoyées: $cancellationData');
+        final request = http.MultipartRequest(
+          'POST',
+          Uri.parse('${AppConfig.baseUrl}/api/quotations/${widget.quotationId}/cancel'),
+        );
+        request.headers['Authorization'] = 'Bearer $token';
+        request.fields['cancellation_reason'] = _cancellationReasonController.text;
+        request.fields['cancellation_date'] = DateFormat('yyyy-MM-dd').format(_selectedCancellationDate);
 
-      final response = await ApiService.post(
-        'quotations/${widget.quotationId}/cancel',
-        data: cancellationData,
-      );
-
-      print('Réponse annulation: $response');
-
-      if (response != null) {
-        if (response['data'] != null || response['status'] == 'cancelled') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Devis annulé avec succès.'),
-              backgroundColor: Colors.orange,
-            ),
+        for (int i = 0; i < _cancellationPhotos.length; i++) {
+          final photo = _cancellationPhotos[i];
+          final fileName = photo.path.split('/').last;
+          final multipartFile = await http.MultipartFile.fromPath(
+            'cancellation_proof[$i]',
+            photo.path,
+            contentType: MediaType('image', fileName.split('.').last),
           );
+          request.files.add(multipartFile);
+        }
+
+        final resp = await request.send();
+        final body = await resp.stream.bytesToString();
+        if (resp.statusCode >= 200 && resp.statusCode < 300) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Devis annulé avec succès.'), backgroundColor: Colors.orange));
+          await _refreshQuotation(token);
+          _clearTempData();
+          Navigator.of(context).pop(true);
+        } else {
+          throw Exception('Erreur serveur (${resp.statusCode}): $body');
+        }
+      } else {
+        final response = await ApiService.post(
+          'quotations/${widget.quotationId}/cancel',
+          data: {
+            'cancellation_reason': _cancellationReasonController.text,
+            'cancellation_date': DateFormat('yyyy-MM-dd').format(_selectedCancellationDate),
+          },
+        );
+        if (response != null && (response['data'] != null || response['status'] == 'cancelled')) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Devis annulé avec succès.'), backgroundColor: Colors.orange));
+          final prefs = await SharedPreferences.getInstance();
+          final token = prefs.getString('access_token') ?? widget.token;
+          await _refreshQuotation(token);
           _clearTempData();
           Navigator.of(context).pop(true);
         } else {
           throw Exception('Réponse inattendue du serveur');
         }
-      } else {
-        throw Exception('Le devis ne peut pas être annulé dans son état actuel');
       }
     } catch (e) {
       print('Erreur lors de l\'annulation: $e');
@@ -925,8 +1374,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                 ),
                 ElevatedButton(
                   onPressed: _isLoading ? null : () async {
-                    Navigator.of(context).pop();
-                    await _createReview();
+                    await _submitReview();
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.amber,
@@ -944,7 +1392,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     );
   }
 
-  Future<void> _createReview() async {
+  Future<void> _submitReview() async {
     if (_isLoading) return;
 
     setState(() {
@@ -953,39 +1401,55 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     });
 
     try {
-      await SharedPreferences.getInstance();
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('access_token') ?? widget.token;
 
-      final reviewData = {
-        'rating': _reviewRating,
-        'comment': _reviewCommentController.text,
-        'review_photos': _reviewPhotos.map((photo) => photo.path.split('/').last).toList(),
-        'recommendation_score': _recommendationScore,
-      };
+      final uri = Uri.parse('${AppConfig.baseUrl}/api/quotations/${widget.quotationId}/reviews');
+      final request = http.MultipartRequest('POST', uri);
+      request.headers['Authorization'] = 'Bearer $token';
+      request.fields['rating'] = _reviewRating.toString();
+      request.fields['comment'] = _reviewCommentController.text;
+      request.fields['recommendation_score'] = _recommendationScore.toString();
 
-      print('Données d\'avis envoyées: $reviewData');
+      for (final photo in _reviewPhotos) {
+        final file = await http.MultipartFile.fromPath('review_photos[]', photo.path);
+        request.files.add(file);
+      }
 
-      final response = await ApiService.post(
-        'quotations/${widget.quotationId}/reviews',
-        data: reviewData,
-      );
+      http.StreamedResponse resp = await request.send();
+      String body = await resp.stream.bytesToString();
+      print('Réponse avis (POST): ${resp.statusCode} -> $body');
 
-      print('Réponse avis: $response');
-
-      if (response != null) {
-        if (response['data'] != null || response['id'] != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Avis publié avec succès ! Merci pour votre retour.'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          _clearTempData();
-          Navigator.of(context).pop(true);
-        } else {
-          throw Exception('Réponse inattendue du serveur');
+      if (resp.statusCode == 422) {
+        // Si un avis existe déjà, tenter une mise à jour via PUT
+        final putReq = http.MultipartRequest('POST', uri.replace(path: '${uri.path}/update'));
+        putReq.headers['Authorization'] = 'Bearer $token';
+        putReq.fields['rating'] = _reviewRating.toString();
+        putReq.fields['comment'] = _reviewCommentController.text;
+        putReq.fields['recommendation_score'] = _recommendationScore.toString();
+        for (final photo in _reviewPhotos) {
+          final file = await http.MultipartFile.fromPath('review_photos[]', photo.path);
+          putReq.files.add(file);
         }
+        resp = await putReq.send();
+        body = await resp.stream.bytesToString();
+        print('Réponse avis (UPDATE): ${resp.statusCode} -> $body');
+      }
+
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Avis envoyé avec succès'), backgroundColor: Colors.green),
+          );
+        }
+        await _refreshQuotation(token);
+        setState(() {
+          _reviewPhotos.clear();
+          _reviewCommentController.clear();
+        });
+        if (mounted) Navigator.of(context).pop(true);
       } else {
-        throw Exception('Impossible de créer un avis');
+        throw Exception('Échec (${resp.statusCode})');
       }
     } catch (e) {
       print('Erreur lors de la création d\'avis: $e');
@@ -1134,6 +1598,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
 
   Widget _buildPartyInfo() {
     final isProfessionalContext = widget.context == QuotationContext.professional;
+    final q = _currentQuotation ?? widget.quotation;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1171,8 +1636,8 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                 radius: 30,
                 child: Text(
                   isProfessionalContext
-                      ? (widget.quotation['client']?['first_name']?[0] ?? 'C').toUpperCase()
-                      : (widget.quotation['professional']?['company_name']?[0] ?? 'P').toUpperCase(),
+                      ? (q['client']?['first_name']?[0] ?? 'C').toUpperCase()
+                      : (q['professional']?['company_name']?[0] ?? 'P').toUpperCase(),
                   style: GoogleFonts.poppins(
                     color: const Color(0xFFFFCC00),
                     fontWeight: FontWeight.w600,
@@ -1187,8 +1652,8 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                   children: [
                     Text(
                       isProfessionalContext
-                          ? '${widget.quotation['client']?['first_name'] ?? ''} ${widget.quotation['client']?['last_name'] ?? ''}'.trim()
-                          : widget.quotation['professional']?['company_name'] ?? 'N/A',
+                          ? '${q['client']?['first_name'] ?? ''} ${q['client']?['last_name'] ?? ''}'.trim()
+                          : q['professional']?['company_name'] ?? 'N/A',
                       style: GoogleFonts.poppins(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
@@ -1196,8 +1661,8 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                     ),
                     Text(
                       isProfessionalContext
-                          ? (widget.quotation['client']?['email'] ?? 'N/A')
-                          : (widget.quotation['professional']?['job_title'] ?? 'N/A'),
+                          ? (q['client']?['email'] ?? 'N/A')
+                          : (q['professional']?['job_title'] ?? 'N/A'),
                       style: GoogleFonts.poppins(
                         color: Colors.grey[600],
                         fontSize: 14,
@@ -1214,6 +1679,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
   }
 
   Widget _buildQuotationDetails() {
+    final q = _currentQuotation ?? widget.quotation;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -1238,7 +1704,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
           // Description
           _buildDetailItem(
             'Description',
-            widget.quotation['description'] ?? 'Non spécifiée',
+            q['description'] ?? 'Non spécifiée',
             Icons.description,
           ),
 
@@ -1247,17 +1713,17 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
           // Date souhaitée
           _buildDetailItem(
             'Date souhaitée',
-            _formatDate(widget.quotation['proposed_date']),
+            _formatDate(q['proposed_date']),
             Icons.calendar_today,
           ),
 
           const SizedBox(height: 16),
 
           // Montant (selon le contexte)
-          if (widget.quotation['amount'] != null)
+          if (q['amount'] != null)
             _buildDetailItem(
               widget.context == QuotationContext.professional ? 'Budget proposé' : 'Montant du devis',
-              '${widget.quotation['amount']} FCFA',
+              '${q['amount']} FCFA',
               Icons.attach_money,
               valueColor: const Color(0xFFFFCC00),
             ),
@@ -1265,21 +1731,394 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
           const SizedBox(height: 16),
 
           // Notes (selon le contexte)
-          if (widget.context == QuotationContext.professional && widget.quotation['professional_notes'] != null && widget.quotation['professional_notes'].isNotEmpty)
+          if (widget.context == QuotationContext.professional && q['professional_notes'] != null && q['professional_notes'].isNotEmpty)
             _buildDetailItem(
               'Vos notes',
-              widget.quotation['professional_notes'],
+              q['professional_notes'],
               Icons.note,
             ),
 
-          if (widget.context == QuotationContext.client && widget.quotation['professional_notes'] != null && widget.quotation['professional_notes'].isNotEmpty)
+          if (widget.context == QuotationContext.client && q['professional_notes'] != null && q['professional_notes'].isNotEmpty)
             _buildDetailItem(
               'Notes du professionnel',
-              widget.quotation['professional_notes'],
+              q['professional_notes'],
               Icons.note,
             ),
 
           const SizedBox(height: 16),
+
+          // Bloc dédié: Réponse du professionnel (toujours visible côté client et pro)
+          if ((q['status'] == 'quoted' || q['status'] == 'accepted' || q['status'] == 'in_progress' || q['status'] == 'completed')) ...[
+            Text(
+              'Réponse du professionnel',
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (q['amount'] != null)
+              _buildDetailItem(
+                'Montant proposé',
+                '${q['amount']} FCFA',
+                Icons.request_quote,
+                valueColor: const Color(0xFFFFCC00),
+              ),
+            if (q['proposed_date'] != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12.0),
+                child: _buildDetailItem(
+                  'Date proposée',
+                  _formatDate(q['proposed_date']),
+                  Icons.event_available,
+                ),
+              ),
+            if ((q['professional_notes'] ?? q['notes']) != null && (q['professional_notes'] ?? q['notes']).toString().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 12.0),
+                child: _buildDetailItem(
+                  'Notes du professionnel',
+                  (q['professional_notes'] ?? q['notes']).toString(),
+                  Icons.note_alt,
+                ),
+              ),
+            const SizedBox(height: 16),
+          ],
+
+          // Informations sur les étapes si disponibles
+          if (q['acceptance_proof'] != null) ...[
+            // Normaliser structure: Map attendu, mais on gère List comme fallback
+            Builder(builder: (context) {
+              final ap = q['acceptance_proof'];
+              final accDate = ap is Map ? ap['acceptance_date'] : null;
+              final clientNotes = q['client_notes'] ?? (ap is Map ? ap['client_notes'] : null);
+              final photoUrls = _extractPhotoUrls(ap);
+              // Debug: compter les URLs extraites
+              try { print('Acceptance proof photos count: ${photoUrls.length}'); } catch (_) {}
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Preuve d\'acceptation',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (accDate != null)
+                    _buildDetailItem(
+                      'Date d\'acceptation',
+                      _formatDate(accDate?.toString()),
+                      Icons.event_available,
+                    ),
+                  if (clientNotes != null && clientNotes.toString().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12.0),
+                      child: _buildDetailItem(
+                        'Notes du client',
+                        clientNotes.toString(),
+                        Icons.sticky_note_2,
+                      ),
+                    ),
+                  if (photoUrls.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 72,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemBuilder: (context, i) {
+                          final url = photoUrls[i];
+                          return ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: CachedNetworkImage(
+                              imageUrl: url,
+                              httpHeaders: _imageHeaders(),
+                              width: 72,
+                              height: 72,
+                              fit: BoxFit.cover,
+                              placeholder: (c, _) => Container(width:72,height:72,color: Colors.grey[100],child: const Center(child: SizedBox(width:18,height:18,child: CircularProgressIndicator(strokeWidth:2)))),
+                              errorWidget: (c, _, __) => Container(
+                                width: 72,
+                                height: 72,
+                                color: Colors.grey[200],
+                                child: const Icon(Icons.broken_image, color: Colors.grey),
+                              ),
+                            ),
+                          );
+                        },
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemCount: photoUrls.length,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ]
+                  else if (_acceptancePhotos.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 72,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemBuilder: (context, i) {
+                          final f = _acceptancePhotos[i];
+                          return ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.file(
+                              f,
+                              width: 72,
+                              height: 72,
+                              fit: BoxFit.cover,
+                              errorBuilder: (c, e, s) => Container(
+                                width: 72,
+                                height: 72,
+                                color: Colors.grey[200],
+                                child: const Icon(Icons.broken_image, color: Colors.grey),
+                              ),
+                            ),
+                          );
+                        },
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemCount: _acceptancePhotos.length,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ],
+              );
+            }),
+          ],
+
+          // Démarrage des travaux (visible côté client et pro si disponible)
+          Builder(builder: (context) {
+            final sp = q['start_proof'];
+            if (sp == null) return const SizedBox.shrink();
+            final startDate = sp is Map ? sp['start_date'] : null;
+            final startDescription = sp is Map ? (sp['initial_description'] ?? sp['description']) : null;
+            final startPhotoUrls = _extractPhotoUrls(sp);
+            final hasAny = (startDate != null) || (startDescription != null && startDescription.toString().isNotEmpty) || startPhotoUrls.isNotEmpty;
+            if (!hasAny) return const SizedBox.shrink();
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Démarrage des travaux',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (startDate != null)
+                  _buildDetailItem(
+                    'Date de démarrage',
+                    _formatDate(startDate.toString()),
+                    Icons.calendar_today,
+                  ),
+                if (startDescription != null && startDescription.toString().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12.0),
+                    child: _buildDetailItem(
+                      'Description initiale',
+                      startDescription.toString(),
+                      Icons.description,
+                    ),
+                  ),
+                if (startPhotoUrls.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 72,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemBuilder: (context, i) {
+                        final url = startPhotoUrls[i];
+                        return ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: CachedNetworkImage(
+                            imageUrl: url,
+                            httpHeaders: _imageHeaders(),
+                            width: 72,
+                            height: 72,
+                            fit: BoxFit.cover,
+                            placeholder: (c, _) => Container(width:72,height:72,color: Colors.grey[100],child: const Center(child: SizedBox(width:18,height:18,child: CircularProgressIndicator(strokeWidth:2)))),
+                            errorWidget: (c, _, __) => Container(
+                              width: 72,
+                              height: 72,
+                              color: Colors.grey[200],
+                              child: const Icon(Icons.broken_image, color: Colors.grey),
+                            ),
+                          ),
+                        );
+                      },
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemCount: startPhotoUrls.length,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ],
+            );
+          }),
+
+          // Fin des travaux (visible côté client et pro si disponible)
+          Builder(builder: (context) {
+            final cp = q['completion_proof'];
+            if (cp == null) return const SizedBox.shrink();
+            final completionDate = cp is Map ? (cp['completion_date'] ?? cp['completed_at']) : null;
+            final completionDescription = cp is Map ? (cp['final_description'] ?? cp['description']) : null;
+            final materialsUsed = cp is Map ? (cp['materials_used'] ?? cp['materials']) : null;
+            final completionPhotoUrls = _extractPhotoUrls(cp);
+            final hasAny = (completionDate != null) || (completionDescription != null && completionDescription.toString().isNotEmpty) || (materialsUsed != null && materialsUsed.toString().isNotEmpty) || completionPhotoUrls.isNotEmpty;
+            if (!hasAny) return const SizedBox.shrink();
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Fin des travaux',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (completionDate != null)
+                  _buildDetailItem(
+                    'Date de fin',
+                    _formatDate(completionDate.toString()),
+                    Icons.event_available,
+                  ),
+                if (completionDescription != null && completionDescription.toString().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12.0),
+                    child: _buildDetailItem(
+                      'Description finale',
+                      completionDescription.toString(),
+                      Icons.description,
+                    ),
+                  ),
+                if (materialsUsed != null && materialsUsed.toString().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12.0),
+                    child: _buildDetailItem(
+                      'Matériaux utilisés',
+                      materialsUsed.toString(),
+                      Icons.build,
+                    ),
+                  ),
+                if (completionPhotoUrls.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 72,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemBuilder: (context, i) {
+                        final url = completionPhotoUrls[i];
+                        return ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: CachedNetworkImage(
+                            imageUrl: url,
+                            httpHeaders: _imageHeaders(),
+                            width: 72,
+                            height: 72,
+                            fit: BoxFit.cover,
+                            placeholder: (c, _) => Container(width:72,height:72,color: Colors.grey[100],child: const Center(child: SizedBox(width:18,height:18,child: CircularProgressIndicator(strokeWidth:2)))),
+                            errorWidget: (c, _, __) => Container(
+                              width: 72,
+                              height: 72,
+                              color: Colors.grey[200],
+                              child: const Icon(Icons.broken_image, color: Colors.grey),
+                            ),
+                          ),
+                        );
+                      },
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemCount: completionPhotoUrls.length,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ],
+            );
+          }),
+
+          // Annulation (visible côté client et pro si disponible)
+          Builder(builder: (context) {
+            final can = q['cancellation_proof'];
+            if (can == null) return const SizedBox.shrink();
+            final cancellationDate = can is Map ? (can['cancellation_date'] ?? can['cancelled_at']) : null;
+            final cancellationReason = can is Map ? (can['cancellation_reason'] ?? can['reason'] ?? can['description']) : null;
+            final cancellationPhotoUrls = _extractPhotoUrls(can);
+            final hasAny = (cancellationDate != null) || (cancellationReason != null && cancellationReason.toString().isNotEmpty) || cancellationPhotoUrls.isNotEmpty;
+            if (!hasAny) return const SizedBox.shrink();
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Annulation',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (cancellationDate != null)
+                  _buildDetailItem(
+                    'Date d\'annulation',
+                    _formatDate(cancellationDate.toString()),
+                    Icons.event_busy,
+                  ),
+                if (cancellationReason != null && cancellationReason.toString().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12.0),
+                    child: _buildDetailItem(
+                      'Raison',
+                      cancellationReason.toString(),
+                      Icons.report_problem,
+                    ),
+                  ),
+                if (cancellationPhotoUrls.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 72,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemBuilder: (context, i) {
+                        final url = cancellationPhotoUrls[i];
+                        return ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: CachedNetworkImage(
+                            imageUrl: url,
+                            httpHeaders: _imageHeaders(),
+                            width: 72,
+                            height: 72,
+                            fit: BoxFit.cover,
+                            placeholder: (c, _) => Container(width:72,height:72,color: Colors.grey[100],child: const Center(child: SizedBox(width:18,height:18,child: CircularProgressIndicator(strokeWidth:2)))),
+                            errorWidget: (c, _, __) => Container(
+                              width: 72,
+                              height: 72,
+                              color: Colors.grey[200],
+                              child: const Icon(Icons.broken_image, color: Colors.grey),
+                            ),
+                          ),
+                        );
+                      },
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemCount: cancellationPhotoUrls.length,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ],
+            );
+          }),
 
           // Informations sur les étapes si disponibles
           _buildStepDetails(),
@@ -1287,7 +2126,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
           const SizedBox(height: 16),
 
           // Pièces jointes
-          if (widget.quotation['attachments'] != null && (widget.quotation['attachments'] as List).isNotEmpty) ...[
+          if (q['attachments'] is List && (q['attachments'] as List).isNotEmpty) ...[
             Text(
               'Pièces jointes',
               style: GoogleFonts.poppins(
@@ -1297,34 +2136,52 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
               ),
             ),
             const SizedBox(height: 8),
-            ...widget.quotation['attachments'].map<Widget>((attachment) => Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey[200]!),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.attach_file, size: 16, color: Colors.grey),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      attachment['original_name'] ?? 'Fichier',
-                      style: GoogleFonts.poppins(fontSize: 14),
+            ...((q['attachments'] as List).map<Widget>((attachment) {
+              String name = 'Fichier';
+              String sizeLabel = '';
+              if (attachment is Map) {
+                name = (attachment['original_name'] ?? attachment['name'] ?? 'Fichier').toString();
+                final s = attachment['size'];
+                if (s is num) {
+                  sizeLabel = '${(s / 1024).toStringAsFixed(1)} KB';
+                } else if (s is String) {
+                  final parsed = double.tryParse(s);
+                  if (parsed != null) sizeLabel = '${(parsed / 1024).toStringAsFixed(1)} KB';
+                }
+              } else if (attachment is String) {
+                name = attachment.split('/').last;
+              }
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey[200]!),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.attach_file, size: 16, color: Colors.grey),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: GoogleFonts.poppins(fontSize: 14),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                  Text(
-                    '${(attachment['size'] / 1024).toStringAsFixed(1)} KB',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
-              ),
-            )),
+                    if (sizeLabel.isNotEmpty)
+                      Text(
+                        sizeLabel,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            })).toList(),
           ],
         ],
       ),
@@ -1332,16 +2189,17 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
   }
 
   Widget _buildStepDetails() {
+    final q = _currentQuotation ?? widget.quotation;
     final steps = <Widget>[];
 
     // Debug: Afficher toutes les données disponibles dans le devis
     print('=== DEBUG DONNEES DEVIS (BACKEND) ===');
-    print('Status: ${widget.quotation['status']}');
-    print('Start proof: ${widget.quotation['start_proof']}');
-    print('Completion proof: ${widget.quotation['completion_proof']}');
-    print('Cancellation proof: ${widget.quotation['cancellation_proof']}');
-    print('Acceptance proof: ${widget.quotation['acceptance_proof']}');
-    print('Review: ${widget.quotation['review']}');
+    print('Status: ${q['status']}');
+    print('Start proof: ${q['start_proof']}');
+    print('Completion proof: ${q['completion_proof']}');
+    print('Cancellation proof: ${q['cancellation_proof']}');
+    print('Acceptance proof: ${q['acceptance_proof']}');
+    print('Review: ${q['review']}');
     print('========================================');
     print('=== DEBUG DONNEES TEMPORAIRES ===');
     print('Temp start date: $_tempStartDate');
@@ -1357,7 +2215,23 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     print('Review rating: $_reviewRating');
     print('Review comment: ${_reviewCommentController.text}');
     print('===============================');
-    final startProof = widget.quotation['start_proof'];
+    // Acceptation du devis
+    final acceptanceProof = q['acceptance_proof'];
+    if (acceptanceProof != null && acceptanceProof is Map) {
+      steps.add(_buildStepCard(
+        '✅ Acceptation du devis',
+        [
+          if (acceptanceProof['acceptance_date'] != null)
+            _buildDetailItem('Date d\'acceptation', _formatDate(acceptanceProof['acceptance_date']), Icons.calendar_today),
+          if (acceptanceProof['proof_photos'] != null && acceptanceProof['proof_photos'] is List && (acceptanceProof['proof_photos'] as List).isNotEmpty)
+            _buildDetailItem('Photos serveur', '${(acceptanceProof['proof_photos'] as List).length} photo(s)', Icons.photo),
+          if (acceptanceProof['accepted_at'] != null)
+            _buildDetailItem('Horodatage', acceptanceProof['accepted_at'], Icons.access_time),
+        ],
+      ));
+    }
+
+    final startProof = q['start_proof'];
     final hasServerStartData = startProof != null && startProof is Map && (startProof['start_date'] != null || startProof['initial_description'] != null);
     final hasTempStartData = _tempStartDate != null || _tempStartDescription != null || (_tempStartPhotosCount != null && _tempStartPhotosCount! > 0);
 
@@ -1385,7 +2259,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     }
 
     // Achèvement des travaux - données serveur ou temporaires
-    final completionProof = widget.quotation['completion_proof'];
+    final completionProof = q['completion_proof'];
     final hasServerCompletionData = completionProof != null && completionProof is Map && (completionProof['completion_date'] != null || completionProof['final_description'] != null || completionProof['materials_used'] != null);
     final hasTempCompletionData = _tempCompletionDate != null || _tempCompletionDescription != null || _tempMaterialsUsed != null || (_tempCompletionPhotosCount != null && _tempCompletionPhotosCount! > 0);
 
@@ -1417,7 +2291,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     }
 
     // Annulation - données serveur ou temporaires
-    final cancellationProof = widget.quotation['cancellation_proof'];
+    final cancellationProof = q['cancellation_proof'];
     final hasServerCancellationData = cancellationProof != null && cancellationProof is Map && (cancellationProof['cancellation_date'] != null || cancellationProof['cancellation_reason'] != null);
     final hasTempCancellationData = _tempCancellationDate != null || _tempCancellationReason != null || (_tempCancellationPhotosCount != null && _tempCancellationPhotosCount! > 0);
 
@@ -1446,7 +2320,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
 
     // Avis temporaire (si en cours de saisie)
     // ignore: unnecessary_null_comparison
-    final hasTempReviewData = _reviewRating != null;
+    final hasTempReviewData = _reviewPhotos.isNotEmpty || _reviewCommentController.text.isNotEmpty;
 
     if (hasTempReviewData) {
       steps.add(_buildStepCard(
@@ -1479,8 +2353,15 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     }
 
     // Avis serveur existant
-    if (widget.quotation['review'] != null && widget.quotation['review'] is Map) {
-      final review = widget.quotation['review'] as Map;
+    Map? review;
+    if (q['review'] != null && q['review'] is Map) {
+      review = q['review'] as Map;
+    } else if (q['reviews'] is List && (q['reviews'] as List).isNotEmpty) {
+      final list = (q['reviews'] as List);
+      final first = list.first;
+      if (first is Map) review = first;
+    }
+    if (review != null) {
       steps.add(_buildStepCard(
         '⭐ Avis',
         [
@@ -1494,7 +2375,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                     return Padding(
                       padding: const EdgeInsets.only(right: 1.0),
                       child: Icon(
-                        index < (review['rating'] as num) ? Icons.star : Icons.star_border,
+                        index < (review?['rating'] as num) ? Icons.star : Icons.star_border,
                         color: Colors.amber,
                         size: 12,
                       ),
@@ -1505,12 +2386,58 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                 ],
               ),
             ),
-          if (review['comment'] != null && review['comment'].isNotEmpty)
+          if (review['comment'] != null && review['comment'].toString().isNotEmpty)
             _buildDetailItem('Commentaire', review['comment'], Icons.comment),
           if (review['recommendation_score'] != null)
             _buildDetailItem('Score de recommandation', '${review['recommendation_score']}/10', Icons.thumb_up),
-          if (review['review_photos'] != null && review['review_photos'] is List && (review['review_photos'] as List).isNotEmpty)
-            _buildDetailItem('Photos', '${(review['review_photos'] as List).length} photo(s)', Icons.photo),
+          if (review['reviewer_name'] != null && review['reviewer_name'].toString().isNotEmpty)
+            _buildDetailItem('Par', review['reviewer_name'], Icons.person),
+          if (review['created_at'] != null)
+            _buildDetailItem('Publié le', _formatDate(review['created_at'].toString()), Icons.schedule),
+          if (review['quality_rating'] != null)
+            _buildDetailItem('Qualité', '${review['quality_rating']}/5', Icons.star_rate),
+          if (review['communication_rating'] != null)
+            _buildDetailItem('Communication', '${review['communication_rating']}/5', Icons.chat_bubble_outline),
+          if (review['punctuality_rating'] != null)
+            _buildDetailItem('Ponctualité', '${review['punctuality_rating']}/5', Icons.access_time),
+          if (review['price_rating'] != null)
+            _buildDetailItem('Prix', '${review['price_rating']}/5', Icons.attach_money),
+          if (review['review_photos'] != null)
+            Builder(builder: (context) {
+              final urls = _extractPhotoUrls(review);
+              if (urls.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: SizedBox(
+                  height: 72,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemBuilder: (context, i) {
+                      final url = urls[i];
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: CachedNetworkImage(
+                          imageUrl: url,
+                          httpHeaders: _imageHeaders(),
+                          width: 72,
+                          height: 72,
+                          fit: BoxFit.cover,
+                          placeholder: (c, _) => Container(width:72,height:72,color: Colors.grey[100],child: const Center(child: SizedBox(width:18,height:18,child: CircularProgressIndicator(strokeWidth:2)))),
+                          errorWidget: (c, _, __) => Container(
+                            width: 72,
+                            height: 72,
+                            color: Colors.grey[200],
+                            child: const Icon(Icons.broken_image, color: Colors.grey),
+                          ),
+                        ),
+                      );
+                    },
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemCount: urls.length,
+                  ),
+                ),
+              );
+            }),
         ],
       ));
     }
@@ -1549,30 +2476,30 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
 
   Widget _buildActionSection() {
     final isProfessionalContext = widget.context == QuotationContext.professional;
-    final status = widget.quotation['status'];
+    final q = _currentQuotation ?? widget.quotation;
+    final status = q['status'];
 
     // Différentes actions selon le contexte et l'état
     if (isProfessionalContext) {
       // Côté professionnel
       if (status == 'pending') {
         return _buildProfessionalResponseSection();
-      } else {
+      }
+      return _buildStatusDisplay();
+    }
+
+    // Côté client
+    switch (status) {
+      case 'quoted':
+        return _buildClientResponseSection();
+      case 'accepted':
+        return _buildAcceptedSection();
+      case 'in_progress':
+        return _buildWorkInProgressSection();
+      case 'completed':
+        return _buildCompletedSection();
+      default:
         return _buildStatusDisplay();
-      }
-    } else {
-      // Côté client
-      switch (status) {
-        case 'quoted':
-          return _buildClientResponseSection();
-        case 'accepted':
-          return _buildAcceptedSection();
-        case 'in_progress':
-          return _buildWorkInProgressSection();
-        case 'completed':
-          return _buildCompletedSection();
-        default:
-          return _buildStatusDisplay();
-      }
     }
   }
 
@@ -1596,7 +2523,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Votre réponse',
+            'Proposer un devis',
             style: GoogleFonts.poppins(
               fontSize: 18,
               fontWeight: FontWeight.w600,
@@ -1605,7 +2532,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
           ),
           const SizedBox(height: 16),
           Text(
-            'Le client attend votre devis. Fournissez un montant et vos conditions.',
+            'Le client attend votre proposition. Renseignez le montant (obligatoire), vos notes (≤ 1000) et une date proposée (optionnelle).',
             style: GoogleFonts.poppins(
               fontSize: 14,
               color: Colors.grey[600],
@@ -1635,15 +2562,20 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                           ),
                         )
                       : Row(
+                          mainAxisSize: MainAxisSize.min,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             const Icon(Icons.check_circle_outline),
                             const SizedBox(width: 8),
-                            Text(
-                              'Accepter',
-                              style: GoogleFonts.poppins(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
+                            Flexible(
+                              child: Text(
+                                'Proposer un devis',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ],
@@ -2018,14 +2950,16 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
   }
 
   Widget _buildStatusDisplay() {
+    final q = _currentQuotation ?? widget.quotation;
+    final status = q['status'];
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _getStatusColor(widget.quotation['status']).withOpacity(0.1),
+        color: _getStatusColor(status).withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: _getStatusColor(widget.quotation['status']),
+          color: _getStatusColor(status),
           width: 1,
         ),
       ),
@@ -2035,25 +2969,25 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                _getStatusIcon(widget.quotation['status']),
-                color: _getStatusColor(widget.quotation['status']),
+                _getStatusIcon(status),
+                color: _getStatusColor(status),
                 size: 24,
               ),
               const SizedBox(width: 8),
               Text(
-                'Statut: ${_getStatusText(widget.quotation['status'])}',
+                'Statut: ${_getStatusText(status)}',
                 style: GoogleFonts.poppins(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: _getStatusColor(widget.quotation['status']),
+                  color: _getStatusColor(status),
                 ),
               ),
             ],
           ),
-          if (widget.quotation['amount'] != null) ...[
+          if (q['amount'] != null) ...[
             const SizedBox(height: 12),
             Text(
-              'Montant: ${widget.quotation['amount']} FCFA',
+              'Montant: ${q['amount']} FCFA',
               style: GoogleFonts.poppins(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,

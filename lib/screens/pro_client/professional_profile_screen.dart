@@ -746,12 +746,81 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen> {
       return const SizedBox.shrink();
     }
 
+    print('=== DEBUG BUSINESS HOURS TYPE ===');
+    print('Type: ${businessHours.runtimeType}');
+    print('Value: $businessHours');
+
     // Gestion flexible du type de business_hours
     Map<String, dynamic> hoursMap = {};
     if (businessHours is Map<String, dynamic>) {
-      hoursMap = businessHours;
+      // Si c'est déjà un Map, vérifier les clés
+      final keys = businessHours.keys.toList();
+      print('Map keys: $keys');
+
+      // Si les clés sont en anglais, les convertir en français
+      if (keys.any((key) => ['monday', 'tuesday', 'wednesday'].contains(key.toLowerCase()))) {
+        print('Converting English keys to French...');
+        final dayMapping = {
+          'monday': 'lundi', 'tuesday': 'mardi', 'wednesday': 'mercredi',
+          'thursday': 'jeudi', 'friday': 'vendredi', 'saturday': 'samedi', 'sunday': 'dimanche'
+        };
+
+        for (var entry in businessHours.entries) {
+          final frenchKey = dayMapping[entry.key.toLowerCase()];
+          if (frenchKey != null) {
+            hoursMap[frenchKey] = entry.value;
+          }
+        }
+      } else {
+        // Utiliser directement le Map si les clés sont déjà en français
+        hoursMap = businessHours;
+      }
     } else if (businessHours is String) {
-      // Si c'est une string, afficher directement
+      print('Business hours is String, trying to parse JSON...');
+      try {
+        // Si c'est une string qui contient du JSON, la parser
+        final parsed = json.decode(businessHours);
+        if (parsed is Map<String, dynamic>) {
+          print('Successfully parsed JSON string to Map');
+          final keys = parsed.keys.toList();
+          print('Parsed keys: $keys');
+
+          // Si les clés sont en anglais, les convertir en français
+          if (keys.any((key) => ['monday', 'tuesday', 'wednesday'].contains(key.toLowerCase()))) {
+            print('Converting English keys to French...');
+            final dayMapping = {
+              'monday': 'lundi', 'tuesday': 'mardi', 'wednesday': 'mercredi',
+              'thursday': 'jeudi', 'friday': 'vendredi', 'saturday': 'samedi', 'sunday': 'dimanche'
+            };
+
+            for (var entry in parsed.entries) {
+              final frenchKey = dayMapping[entry.key.toLowerCase()];
+              if (frenchKey != null) {
+                hoursMap[frenchKey] = entry.value;
+              }
+            }
+          } else {
+            hoursMap = parsed;
+          }
+        } else {
+          print('Parsed JSON is not a Map: ${parsed.runtimeType}');
+          // Si c'est une string simple (pas du JSON), l'utiliser directement
+          return _buildSimpleHoursCard(businessHours);
+        }
+      } catch (e) {
+        print('Failed to parse JSON string: $e');
+        // Si c'est une string simple (pas du JSON), l'utiliser directement
+        return _buildSimpleHoursCard(businessHours);
+      }
+    } else if (businessHours is List<dynamic>) {
+      // Si c'est une liste, essayer de la convertir en Map
+      print('Business hours is List, trying to convert...');
+      final days = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+      for (var i = 0; i < days.length && i < businessHours.length; i++) {
+        hoursMap[days[i]] = businessHours[i];
+      }
+    } else {
+      // Pour tout autre type, afficher un message d'erreur
       return Card(
         elevation: 2,
         shape: RoundedRectangleBorder(
@@ -778,10 +847,25 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen> {
               ),
               const SizedBox(height: 12),
               Text(
-                businessHours,
+                'Format d\'horaires non supporté',
                 style: GoogleFonts.poppins(
                   fontSize: 14,
-                  color: const Color(0xFF1E3A5F),
+                  color: Colors.red,
+                ),
+              ),
+              Text(
+                'Type reçu: ${businessHours.runtimeType}',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: Colors.grey,
+                ),
+              ),
+              Text(
+                'Valeur: ${businessHours.toString()}',
+                style: GoogleFonts.poppins(
+                  fontSize: 10,
+                  color: Colors.grey,
+                  fontStyle: FontStyle.italic,
                 ),
               ),
             ],
@@ -793,6 +877,296 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen> {
     if (hoursMap.isEmpty) {
       return const SizedBox.shrink();
     }
+
+    final isOpenNow = _computeIsOpenNow(hoursMap);
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.schedule, color: const Color(0xFF1E3A5F)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Horaires d\'ouverture',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF1E3A5F),
+                    ),
+                  ),
+                ),
+                _buildOpenNowBadge(isOpenNow),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ..._buildGroupedBusinessHoursList(hoursMap),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildGroupedBusinessHoursList(Map<String, dynamic> businessHours) {
+    try {
+      // L'API retourne les jours en français
+      final days = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+      final dayNames = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+      final dayLabelsShort = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+      final todayIdx = _todayIndex();
+
+      print('=== DEBUG BUILDING HOURS LIST ===');
+      print('Available keys: ${businessHours.keys.toList()}');
+
+      // Normalize to schedule strings per day
+      final normalized = <int, String>{};
+      for (var i = 0; i < days.length; i++) {
+        final dayData = businessHours[days[i]];
+        String schedule;
+
+        print('Processing day $i (${days[i]}): $dayData (type: ${dayData?.runtimeType})');
+
+        if (dayData == null || dayData.isEmpty) {
+          schedule = 'Fermé';
+        } else if (dayData is Map<String, dynamic>) {
+          final openTime = dayData['open']?.toString() ?? '';
+          final closeTime = dayData['close']?.toString() ?? '';
+
+          if (openTime.isEmpty || closeTime.isEmpty) {
+            schedule = 'Fermé';
+          } else {
+            schedule = '$openTime – $closeTime';
+          }
+        } else if (dayData is String) {
+          schedule = dayData;
+        } else if (dayData is List<dynamic>) {
+          // Si c'est une liste de créneaux pour ce jour
+          if (dayData.isEmpty) {
+            schedule = 'Fermé';
+          } else {
+            // Prendre le premier créneau ou les concaténer
+            final slots = dayData.map((slot) {
+              if (slot is Map<String, dynamic>) {
+                final open = slot['open']?.toString() ?? '';
+                final close = slot['close']?.toString() ?? '';
+                return open.isNotEmpty && close.isNotEmpty ? '$open – $close' : 'Fermé';
+              } else if (slot is String) {
+                return slot;
+              }
+              return 'Fermé';
+            }).where((s) => s != 'Fermé').toList();
+
+            schedule = slots.isNotEmpty ? slots.join(', ') : 'Fermé';
+          }
+        } else if (dayData is bool) {
+          // Si c'est un boolean (true = ouvert, false = fermé)
+          schedule = dayData ? 'Ouvert' : 'Fermé';
+        } else {
+          // Pour tout autre format, essayer de le convertir en string
+          schedule = dayData.toString();
+          print('Converted to string: $schedule');
+        }
+        normalized[i] = schedule;
+        print('Final schedule for ${days[i]}: $schedule');
+      }
+
+      // Group consecutive days with same schedule
+      final groups = <Map<String, dynamic>>[];
+      int start = 0;
+      String current = normalized[0] ?? 'Fermé';
+      for (var i = 1; i < days.length; i++) {
+        final next = normalized[i] ?? 'Fermé';
+        if (next != current) {
+          groups.add({'start': start, 'end': i - 1, 'schedule': current});
+          start = i;
+          current = next;
+        }
+      }
+      groups.add({'start': start, 'end': days.length - 1, 'schedule': current});
+
+      // Build UI
+      return groups.map((group) {
+        final startIdx = group['start'] as int;
+        final endIdx = group['end'] as int;
+        final schedule = group['schedule'] as String;
+        final label = startIdx == endIdx
+            ? dayNames[startIdx]
+            : '${dayLabelsShort[startIdx]} – ${dayLabelsShort[endIdx]}';
+        final includesToday = todayIdx >= startIdx && todayIdx <= endIdx;
+        final isClosed = schedule.toLowerCase().contains('fermé');
+        final color = isClosed ? Colors.grey : const Color(0xFF1E3A5F);
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: color.withOpacity(0.2)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: const Color(0xFF1E3A5F),
+                  ),
+                ),
+              ),
+              Text(
+                schedule,
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+              if (includesToday) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E3A5F).withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF1E3A5F).withOpacity(0.2)),
+                  ),
+                  child: Text(
+                    "Aujourd'hui",
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF1E3A5F),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      }).toList();
+    } catch (e) {
+      print('Error building hours list: $e');
+      return [
+        Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.red.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.red.withOpacity(0.3)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.error, color: Colors.red),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Erreur lors du traitement des horaires',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.red,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ];
+    }
+  }
+
+  bool _computeIsOpenNow(Map<String, dynamic> businessHours) {
+    try {
+      final days = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+      final now = DateTime.now();
+      final idx = _todayIndex();
+      final key = days[idx];
+      final dayData = businessHours[key];
+      if (dayData == null) return false;
+
+      print('=== DEBUG IS OPEN NOW ===');
+      print('Today: $key, Data: $dayData, Type: ${dayData.runtimeType}');
+
+      String? open;
+      String? close;
+      if (dayData is Map<String, dynamic>) {
+        open = dayData['open']?.toString();
+        close = dayData['close']?.toString();
+      } else if (dayData is String) {
+        if (dayData.toLowerCase().contains('fermé') || dayData.toLowerCase().contains('closed')) return false;
+        if (dayData.toLowerCase().contains('ouvert') || dayData.toLowerCase().contains('open')) return true;
+        final parts = dayData.split(RegExp(r"\s*–\s*"));
+        if (parts.length == 2) {
+          open = parts[0].trim();
+          close = parts[1].trim();
+        }
+      } else if (dayData is List<dynamic> && dayData.isNotEmpty) {
+        // Prendre le premier créneau de la journée
+        final firstSlot = dayData.first;
+        if (firstSlot is Map<String, dynamic>) {
+          open = firstSlot['open']?.toString();
+          close = firstSlot['close']?.toString();
+        } else if (firstSlot is String) {
+          if (firstSlot.toLowerCase().contains('fermé') || firstSlot.toLowerCase().contains('closed')) return false;
+          if (firstSlot.toLowerCase().contains('ouvert') || firstSlot.toLowerCase().contains('open')) return true;
+          final parts = firstSlot.split(RegExp(r"\s*–\s*"));
+          if (parts.length == 2) {
+            open = parts[0].trim();
+            close = parts[1].trim();
+          }
+        }
+      } else if (dayData is bool) {
+        return dayData; // true = ouvert, false = fermé
+      } else if (dayData != null) {
+        // Pour tout autre format, essayer de le convertir en string
+        final stringValue = dayData.toString().toLowerCase();
+        if (stringValue.contains('fermé') || stringValue.contains('closed') || stringValue == 'false') return false;
+        if (stringValue.contains('ouvert') || stringValue.contains('open') || stringValue == 'true') return true;
+      }
+
+      if (open == null || close == null || open.isEmpty || close.isEmpty) return false;
+
+      final nowMinutes = now.hour * 60 + now.minute;
+      final openMin = _parseTimeToMinutes(open);
+      final closeMin = _parseTimeToMinutes(close);
+      if (openMin == null || closeMin == null) return false;
+
+      return nowMinutes >= openMin && nowMinutes <= closeMin;
+    } catch (e) {
+      print('Error computing is open now: $e');
+      return false;
+    }
+  }
+
+  int _todayIndex() {
+    return DateTime.now().weekday - 1; // 0 = Monday, 6 = Sunday
+  }
+
+  int? _parseTimeToMinutes(String hhmm) {
+    try {
+      final parts = hhmm.split(':');
+      if (parts.length != 2) return null;
+      final h = int.parse(parts[0]);
+      final m = int.parse(parts[1]);
+      return h * 60 + m;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Widget _buildSimpleHoursCard(String hoursText) {
+    final isOpenNow = _computeIsOpenNowFromString(hoursText);
 
     return Card(
       elevation: 2,
@@ -816,81 +1190,90 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen> {
                     color: const Color(0xFF1E3A5F),
                   ),
                 ),
+                const Spacer(),
+                _buildOpenNowBadge(isOpenNow),
               ],
             ),
-            const SizedBox(height: 16),
-            ..._buildBusinessHoursList(hoursMap),
+            const SizedBox(height: 12),
+            Text(
+              hoursText,
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: const Color(0xFF1E3A5F),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  List<Widget> _buildBusinessHoursList(Map<String, dynamic> businessHours) {
-    // L'API retourne les jours en français
-    final days = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
-    final dayNames = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+  bool _computeIsOpenNowFromString(String hoursText) {
+    try {
+      final now = DateTime.now();
+      final today = _getTodayFrench();
 
-    print('=== DEBUG BUSINESS HOURS ===');
-    print('Business hours reçus: $businessHours');
-    print('Jours disponibles: ${businessHours.keys}');
-
-    return days.map((day) {
-      final dayData = businessHours[day];
-      final dayName = dayNames[days.indexOf(day)];
-
-      print('Traitement du jour $day: $dayData');
-
-      if (dayData == null || dayData.isEmpty) {
-        return _buildDaySchedule(dayName, 'Fermé', Colors.grey);
-      }
-
-      // L'API peut retourner les données sous forme de Map ou de String
-      if (dayData is Map<String, dynamic>) {
-        final openTime = dayData['open']?.toString() ?? '';
-        final closeTime = dayData['close']?.toString() ?? '';
-
-        if (openTime.isEmpty || closeTime.isEmpty) {
-          return _buildDaySchedule(dayName, 'Fermé', Colors.grey);
+      // Si le texte contient le jour d'aujourd'hui et des heures
+      if (hoursText.toLowerCase().contains(today.toLowerCase())) {
+        // Extraire les heures du jour actuel
+        final regex = RegExp(r'\b(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})\b');
+        final match = regex.firstMatch(hoursText);
+        if (match != null) {
+          final open = match.group(1);
+          final close = match.group(2);
+          if (open != null && close != null) {
+            final nowMinutes = now.hour * 60 + now.minute;
+            final openMin = _parseTimeToMinutes(open);
+            final closeMin = _parseTimeToMinutes(close);
+            if (openMin != null && closeMin != null) {
+              return nowMinutes >= openMin && nowMinutes <= closeMin;
+            }
+          }
         }
-
-        return _buildDaySchedule(dayName, '$openTime - $closeTime', const Color(0xFF1E3A5F));
-      } else if (dayData is String) {
-        // Si c'est une string, l'utiliser directement
-        return _buildDaySchedule(dayName, dayData, const Color(0xFF1E3A5F));
-      } else {
-        // Pour tout autre type, afficher le type
-        return _buildDaySchedule(dayName, 'Fermé', Colors.grey);
       }
-    }).toList();
+
+      // Si le texte contient "fermé" ou "closed"
+      if (hoursText.toLowerCase().contains('fermé') || hoursText.toLowerCase().contains('closed')) {
+        return false;
+      }
+
+      // Si le texte contient "ouvert" ou "open"
+      if (hoursText.toLowerCase().contains('ouvert') || hoursText.toLowerCase().contains('open')) {
+        return true;
+      }
+
+      return false;
+    } catch (_) {
+      return false;
+    }
   }
 
-  Widget _buildDaySchedule(String day, String schedule, Color textColor) {
+  String _getTodayFrench() {
+    final dayNames = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+    return dayNames[DateTime.now().weekday - 1];
+  }
+
+  Widget _buildOpenNowBadge(bool isOpen) {
+    final color = isOpen ? const Color(0xFF4CAF50) : const Color(0xFFF44336);
+    final bg = color.withOpacity(0.1);
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: textColor.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: textColor.withOpacity(0.2)),
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.5)),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisSize: MainAxisSize.min,
         children: [
+          Icon(isOpen ? Icons.check_circle : Icons.cancel, size: 12, color: color),
+          const SizedBox(width: 4),
           Text(
-            day,
+            isOpen ? 'Ouvert' : 'Fermé',
             style: GoogleFonts.poppins(
-              fontSize: 14,
+              fontSize: 10,
               fontWeight: FontWeight.w500,
-              color: const Color(0xFF1E3A5F),
-            ),
-          ),
-          Text(
-            schedule,
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: textColor,
+              color: color,
             ),
           ),
         ],

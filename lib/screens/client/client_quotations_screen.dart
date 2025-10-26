@@ -28,11 +28,75 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   String _token = '';
+  final Set<String> _fetchingDetails = <String>{};
+  String _statusFilter = 'all'; // all, pending, quoted, accepted, in_progress, completed, cancelled, rejected
 
   @override
   void initState() {
     super.initState();
     _initializeData();
+  }
+
+  List<Widget> _buildStatusChips() {
+    const statuses = [
+      {'key': 'all', 'label': 'Tous'},
+      {'key': 'pending', 'label': 'En attente'},
+      {'key': 'quoted', 'label': 'Devis reçus'},
+      {'key': 'accepted', 'label': 'Acceptés'},
+      {'key': 'in_progress', 'label': 'En cours'},
+      {'key': 'completed', 'label': 'Terminés'},
+      {'key': 'cancelled', 'label': 'Annulés'},
+      {'key': 'rejected', 'label': 'Refusés'},
+    ];
+    return statuses.map((s) {
+      final selected = _statusFilter == s['key'];
+      return Padding(
+        padding: const EdgeInsets.only(right: 8.0),
+        child: ChoiceChip(
+          label: Text(s['label'] as String, style: GoogleFonts.poppins(fontSize: 12)),
+          selected: selected,
+          selectedColor: Colors.black.withOpacity(0.08),
+          backgroundColor: Colors.white,
+          shape: StadiumBorder(side: BorderSide(color: selected ? Colors.black : Colors.grey.shade300)),
+          onSelected: (_) => setState(() => _statusFilter = s['key'] as String),
+        ),
+      );
+    }).toList();
+  }
+
+  Future<void> _ensureQuotationDetails(String quotationId) async {
+    if (_fetchingDetails.contains(quotationId) || _token.isEmpty) return;
+    _fetchingDetails.add(quotationId);
+    try {
+      final resp = await http.get(
+        Uri.parse('${AppConfig.baseUrl}/api/quotations/$quotationId'),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $_token',
+        },
+      );
+      if (resp.statusCode == 200) {
+        final data = json.decode(resp.body);
+        final detailed = data['data'] ?? {};
+        final idx = _quotations.indexWhere((e) => e['id'].toString() == quotationId);
+        if (idx != -1) {
+          setState(() {
+            _quotations[idx] = {
+              ..._quotations[idx],
+              // Fusionner champs de réponse pro
+              if (detailed['amount'] != null) 'amount': detailed['amount'],
+              if (detailed['proposed_date'] != null) 'proposed_date': detailed['proposed_date'],
+              if (detailed['professional_notes'] != null) 'professional_notes': detailed['professional_notes'],
+              if (detailed['notes'] != null && detailed['professional_notes'] == null) 'notes': detailed['notes'],
+            };
+          });
+        }
+      }
+    } catch (_) {
+      // ignorer les erreurs silencieusement
+    } finally {
+      _fetchingDetails.remove(quotationId);
+    }
   }
 
   Future<void> _initializeData() async {
@@ -136,6 +200,10 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Appliquer filtre de statut
+    final List<dynamic> displayed = _statusFilter == 'all'
+        ? _quotations
+        : _quotations.where((q) => (q['status'] ?? '').toString() == _statusFilter).toList();
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -151,6 +219,19 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.of(context).pop(),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(56),
+          child: Container(
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: _buildStatusChips(),
+              ),
+            ),
+          ),
         ),
       ),
       body: _isLoading
@@ -181,16 +262,16 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
                     ],
                   ),
                 )
-              : _quotations.isEmpty
+              : displayed.isEmpty
                   ? _buildEmptyState()
                   : RefreshIndicator(
                       onRefresh: _loadQuotations,
                       color: const Color(0xFFFFCC00),
                       child: ListView.builder(
                         padding: const EdgeInsets.all(16),
-                        itemCount: _quotations.length,
+                        itemCount: displayed.length,
                         itemBuilder: (context, index) {
-                          final quotation = _quotations[index];
+                          final quotation = displayed[index];
                           return _buildQuotationCard(quotation);
                         },
                       ),
@@ -273,6 +354,14 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
   }
 
   Widget _buildQuotationCard(dynamic quotation) {
+    // Enrichir paresseusement si statut >= quoted mais notes manquantes
+    final String qId = quotation['id'].toString();
+    final String status = (quotation['status'] ?? '').toString();
+    final hasProNotes = ((quotation['professional_notes'] ?? quotation['notes']) != null)
+        && ((quotation['professional_notes'] ?? quotation['notes']).toString().isNotEmpty);
+    if ((status == 'quoted' || status == 'accepted' || status == 'in_progress' || status == 'completed') && !hasProNotes) {
+      _ensureQuotationDetails(qId);
+    }
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 12),
@@ -281,9 +370,9 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () {
-          // Naviguer vers les détails unifiés du devis
-          Navigator.push(
+        onTap: () async {
+          // Naviguer vers les détails unifiés du devis puis rafraîchir la liste au retour
+          await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => UnifiedQuotationDetailScreen(
@@ -294,6 +383,8 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
               ),
             ),
           );
+          // Recharger pour refléter une éventuelle mise à jour (ex: quoted)
+          _loadQuotations();
         },
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -385,6 +476,31 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
               ),
 
               const SizedBox(height: 12),
+
+              // Notes du professionnel si disponibles (visible à partir de quoted)
+              if ((quotation['status'] == 'quoted' || quotation['status'] == 'accepted' || quotation['status'] == 'in_progress' || quotation['status'] == 'completed')
+                  && ((quotation['professional_notes'] ?? quotation['notes']) != null)
+                  && ((quotation['professional_notes'] ?? quotation['notes']).toString().isNotEmpty)) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.note_alt, size: 16, color: Colors.grey),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        (quotation['professional_notes'] ?? quotation['notes']).toString(),
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          color: Colors.grey[800],
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+              ],
 
               // Date proposée et montant
               Row(
@@ -482,9 +598,12 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
 
     // Construit l'URL complète Laravel si nécessaire
     if (avatarUrl != null && avatarUrl.isNotEmpty) {
-      if (!avatarUrl.startsWith('http://') && !avatarUrl.startsWith('https://')) {
-        if (avatarUrl.startsWith('/storage/') || avatarUrl.startsWith('storage/')) {
-          final cleanPath = avatarUrl.startsWith('/') ? avatarUrl.substring(1) : avatarUrl;
+      // Ignorer les placeholders externes potentiellement inaccessibles
+      if (avatarUrl!.contains('via.placeholder.com') || avatarUrl!.contains('placeholder')) {
+        avatarUrl = null;
+      } else if (!(avatarUrl!.startsWith('http://') || avatarUrl!.startsWith('https://'))) {
+        if (avatarUrl!.startsWith('/storage/') || avatarUrl!.startsWith('storage/')) {
+          final cleanPath = avatarUrl!.startsWith('/') ? avatarUrl!.substring(1) : avatarUrl!;
           avatarUrl = '${AppConfig.baseUrl}/$cleanPath';
         }
       }

@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:batilink_mobile_app/core/app_config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class QuoteRequestScreen extends StatefulWidget {
@@ -60,7 +61,7 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
       }
 
       final response = await http.get(
-        Uri.parse('http://10.0.2.2:8000/api/professionals/${widget.professionalId}'),
+        Uri.parse('${AppConfig.baseUrl}/api/professionals/${widget.professionalId}'),
         headers: {
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
@@ -189,7 +190,7 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
     final pickedDate = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
-      firstDate: DateTime.now(),
+      firstDate: DateTime.now().add(const Duration(days: 1)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
       builder: (context, child) {
         return Theme(
@@ -212,30 +213,74 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
   }
 
   Future<void> _addAttachment() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx'],
+      withData: false,
+    );
 
-    if (pickedFile != null) {
-      final file = File(pickedFile.path);
-      print('Fichier sélectionné: ${file.path}');
-      print('Taille du fichier sélectionné: ${await file.length()} bytes');
-
-      setState(() {
-        _attachments.add(file);
-      });
-      print('Nombre total de pièces jointes: ${_attachments.length}');
-    } else {
+    if (result == null) {
       print('Aucun fichier sélectionné');
+      return;
     }
+
+    int added = 0;
+    for (final file in result.files) {
+      final path = file.path;
+      if (path == null) continue;
+      final f = File(path);
+      final size = await f.length();
+      // Taille max 10 Mo
+      if (size > 10 * 1024 * 1024) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Chaque pièce jointe doit être ≤ 10 Mo'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        continue;
+      }
+      setState(() {
+        _attachments.add(f);
+      });
+      added++;
+    }
+    print('Nombre de pièces jointes ajoutées: $added | Total: ${_attachments.length}');
   }
 
   Future<void> _submitQuoteRequest() async {
     // Fonction d'envoi de demande de devis avec logs de débogage complets
     // pour diagnostiquer les problèmes d'envoi côté serveur
-    if (_descriptionController.text.trim().isEmpty) {
+    final desc = _descriptionController.text.trim();
+    if (desc.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Veuillez saisir une description'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    if (desc.length > 2000) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La description ne doit pas dépasser 2000 caractères'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    // proposed_date doit être postérieure à aujourd'hui
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final selected = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    if (!selected.isAfter(today)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La date souhaitée doit être postérieure à aujourd\'hui'),
           backgroundColor: Colors.red,
         ),
       );
@@ -263,7 +308,7 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
       print('=== DEBUG ENVOI DEVIS ===');
       print('Token utilisé: ${token.substring(0, 20)}...');
       print('Professional ID: ${widget.professionalId}');
-      print('Description: ${_descriptionController.text.trim()}');
+      print('Description: $desc');
       print('Date proposée: ${_selectedDate.toIso8601String().split('T')[0]}');
       print('Nombre de pièces jointes: ${_attachments.length}');
 
@@ -281,7 +326,7 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
 
       // Ajouter les champs de formulaire
       request.fields['professional_id'] = widget.professionalId;
-      request.fields['description'] = _descriptionController.text.trim();
+      request.fields['description'] = desc;
       request.fields['proposed_date'] = _selectedDate.toIso8601String().split('T')[0];
 
       // Ajouter les pièces jointes

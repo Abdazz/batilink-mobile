@@ -619,7 +619,14 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
                 'Voir devis',
                 'Consulter les propositions',
                 Icons.inbox,
-                () => Navigator.pushNamed(context, '/pro-client/quotations'),
+                () => Navigator.pushNamed(
+                  context,
+                  '/pro-client/quotations',
+                  arguments: {
+                    'token': _finalToken,
+                    'userData': widget.userData,
+                  },
+                ),
               ),
             ),
           ],
@@ -800,7 +807,14 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
               'Consulter les propositions reçues',
               Icons.inbox,
               const Color(0xFF2196F3),
-              () => Navigator.pushNamed(context, '/pro-client/quotations'),
+              () => Navigator.pushNamed(
+                context,
+                '/pro-client/quotations',
+                arguments: {
+                  'token': _finalToken,
+                  'userData': widget.userData,
+                },
+              ),
             ),
             _buildModeGridCard(
               'Jobs actifs',
@@ -897,14 +911,28 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
               'Consulter les demandes de devis',
               Icons.inbox,
               const Color(0xFFE91E63),
-              () => Navigator.pushNamed(context, '/pro-client/respond-quotations'),
+              () => Navigator.pushNamed(
+                context,
+                '/pro-client/respond-quotations',
+                arguments: {
+                  'token': _finalToken,
+                  'userData': widget.userData,
+                },
+              ),
             ),
             _buildModeGridCard(
               'Mes projets',
               'Gérer vos projets en cours',
               Icons.work,
               const Color(0xFF4CAF50),
-              () => Navigator.pushNamed(context, '/pro-client/professional-jobs'),
+              () => Navigator.pushNamed(
+                context,
+                '/pro-client/professional-jobs',
+                arguments: {
+                  'token': _finalToken,
+                  'userData': widget.userData,
+                },
+              ),
             ),
             _buildModeGridCard(
               'Mon profil',

@@ -81,8 +81,21 @@ class MyApp extends StatelessWidget {
           );
         },
         '/pro-client/create-quotation': (context) => const ProClientCreateQuotationScreen(),
-        '/pro-client/quotations': (context) => const ProClientQuotationsScreen(),
-        '/pro-client/respond-quotations': (context) => const ProClientRespondQuotationsScreen(),
+        '/pro-client/quotations': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return ProClientQuotationsScreen(
+            token: args?['token'],
+            userData: args?['userData'],
+          );
+        },
+        '/pro-client/respond-quotations': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return ProClientRespondQuotationsScreen(
+            token: args?['token'],
+            userData: args?['userData'],
+            filterMode: args?['filterMode'] ?? 'pending',
+          );
+        },
         '/pro-client/client-jobs': (context) {
           final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
           return ClientQuotationsScreen(
@@ -104,7 +117,14 @@ class MyApp extends StatelessWidget {
             userData: args?['userData'] ?? <String, dynamic>{},
           );
         },
-        '/pro-client/professional-jobs': (context) => const ProClientRespondQuotationsScreen(),
+        '/pro-client/professional-jobs': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return ProClientRespondQuotationsScreen(
+            token: args?['token'],
+            userData: args?['userData'],
+            filterMode: 'active',
+          );
+        },
         '/pro-client/profile': (context) {
           final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
           return ProClientProfileScreen(
