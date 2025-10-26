@@ -2,7 +2,7 @@
 /// Ce fichier gère toutes les URLs et configurations réseau de manière centralisée
 class AppConfig {
   // Configuration des environnements
-  static const Environment environment = Environment.development;
+  static const Environment environment = Environment.production;
 
   // Configuration des URLs de base selon l'environnement
   static String get baseUrl {
@@ -12,7 +12,7 @@ class AppConfig {
       case Environment.staging:
         return 'https://staging-api.batilink.com';
       case Environment.production:
-        return 'https://api.batilink.com';
+        return 'https://batilink.golden-technologies.com';
     }
   }
 
