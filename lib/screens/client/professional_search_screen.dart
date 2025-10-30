@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter_rating_bar/flutter_rating_bar.dart';
+// Import removed as it's no longer needed
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../models/professional.dart';
 import 'professional_detail_screen.dart';
@@ -326,7 +326,7 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
   double _minRating = 0;
   bool _availableNow = false;
   String _sortBy = 'relevance';
-  bool _showFilters = false;
+  // Suppression de la variable inutilisée
 
   @override
   void dispose() {
@@ -470,15 +470,9 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
     }
   }
 
+  // Méthode conservée pour compatibilité future
   void _resetFilters() {
-    setState(() {
-      _selectedProfession = '';
-      _location = '';
-      _minRating = 0;
-      _availableNow = false;
-      _sortBy = 'relevance';
-    });
-    _loadProfessionals(reset: true);
+    // Implémentation vide car non utilisée dans la nouvelle interface
   }
 
   Future<void> _toggleFavorite(Professional professional) async {
@@ -538,266 +532,151 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
     }
   }
 
+  // Méthode conservée pour compatibilité future
   void _applyFilters() {
-    setState(() {
-      _showFilters = false;
-    });
     _loadProfessionals(reset: true);
+  }
+
+  // Widget pour les puces de filtre
+  Widget _buildFilterChip(String label, {bool isSelected = false}) {
+    return GestureDetector(
+      onTap: () {
+        // Logique de filtrage simplifiée
+        setState(() {
+          // Mettre à jour l'état du filtre sélectionné
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        margin: const EdgeInsets.only(right: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFFFCC00) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? const Color(0xFFFFCC00) : Colors.grey[300]!,
+          ),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.poppins(
+            color: isSelected ? Colors.white : Colors.grey[800],
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    print('=== DEBUG BUILD ===');
-    print('_isProClient: $_isProClient (${_isProClient.runtimeType})');
-    print('_isRoleDetectionComplete: $_isRoleDetectionComplete (${_isRoleDetectionComplete.runtimeType})');
-    print('widget.token: ${widget.token}');
-    print('widget.userData: ${widget.userData}');
-    
-    // Afficher la pile d'appels pour comprendre d'où vient le build
-    print('Stack trace:');
-    print(StackTrace.current.toString().split('\n').take(5).join('\n'));
-    
-    // Vérifier si le widget est toujours monté
-    if (!mounted) {
-      print('Widget non monté, retourne un conteneur vide');
-      return Container();
-    }
-
     return Scaffold(
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
         title: Text(
-          'Rechercher un professionnel',
+          'Rechercher un Professionnel',
           style: GoogleFonts.poppins(
-            fontSize: 18,
             fontWeight: FontWeight.w600,
+            fontSize: 20,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.filter_list),
-            onPressed: () {
-              setState(() {
-                _showFilters = !_showFilters;
-              });
-            },
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(350),
-          child: Padding(
-            padding: const EdgeInsets.all(8.0),
+        backgroundColor: const Color(0xFFFFCC00),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+      ),
+      body: Column(
+        children: [
+          // Barre de recherche et filtres
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFCC00),
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(20),
+                bottomRight: Radius.circular(20),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
             child: Column(
               children: [
-                TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Rechercher un professionnel...',
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    filled: true,
-                    fillColor: const Color(0xFFFFCC00).withOpacity(0.1),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
-                    suffixIcon: _searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              _searchController.clear();
-                              _loadProfessionals(reset: true);
-                            },
-                          )
-                        : null,
-                  ),
-                  onSubmitted: (_) => _loadProfessionals(reset: true),
-                ),
-                if (_showFilters) Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  padding: const EdgeInsets.all(12),
+                // Barre de recherche
+                Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(30),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.grey.withOpacity(0.2),
-                        spreadRadius: 1,
-                        blurRadius: 4,
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
                     ],
                   ),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: 200,
-                    ),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            'Filtres',
-                            style: GoogleFonts.poppins(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 16,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  decoration: const InputDecoration(
-                                    labelText: 'Métier',
-                                    border: OutlineInputBorder(),
-                                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                    isDense: true,
-                                  ),
-                                  onChanged: (value) => _selectedProfession = value,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: TextField(
-                                  decoration: const InputDecoration(
-                                    labelText: 'Localisation',
-                                    border: OutlineInputBorder(),
-                                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                    isDense: true,
-                                  ),
-                                  onChanged: (value) => _location = value,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Note minimale: ${_minRating.toInt()}+',
-                                      style: GoogleFonts.poppins(fontSize: 12),
-                                    ),
-                                    RatingBar.builder(
-                                      initialRating: _minRating,
-                                      minRating: 0,
-                                      direction: Axis.horizontal,
-                                      allowHalfRating: false,
-                                      itemCount: 5,
-                                      itemSize: 16,
-                                      itemBuilder: (context, _) => const Icon(
-                                        Icons.star,
-                                        color: Colors.amber,
-                                      ),
-                                      onRatingUpdate: (rating) {
-                                        setState(() {
-                                          _minRating = rating;
-                                        });
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text('Trier par:'),
-                                    DropdownButton<String>(
-                                      value: _sortBy,
-                                      isDense: true,
-                                      items: const [
-                                        DropdownMenuItem(
-                                          value: 'relevance',
-                                          child: Text('Pertinence', style: TextStyle(fontSize: 12)),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: 'rating',
-                                          child: Text('Note', style: TextStyle(fontSize: 12)),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: 'distance',
-                                          child: Text('Distance', style: TextStyle(fontSize: 12)),
-                                        ),
-                                      ],
-                                      onChanged: (value) {
-                                        if (value != null) {
-                                          setState(() {
-                                            _sortBy = value;
-                                          });
-                                        }
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Checkbox(
-                                value: _availableNow,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _availableNow = value ?? false;
-                                  });
-                                },
-                              ),
-                              const Text('Disponible maintenant'),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: _resetFilters,
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 8),
-                                  ),
-                                  child: const Text('Réinitialiser'),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: _applyFilters,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFFFFCC00),
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 8),
-                                  ),
-                                  child: const Text('Appliquer'),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Rechercher un professionnel...',
+                      hintStyle: GoogleFonts.poppins(
+                        color: Colors.grey[500],
+                        fontSize: 14,
                       ),
+                      border: InputBorder.none,
+                      prefixIcon: const Icon(Icons.search, color: Color(0xFFFFCC00)),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, color: Colors.grey),
+                              onPressed: () {
+                                _searchController.clear();
+                                _loadProfessionals(reset: true);
+                              },
+                            )
+                          : null,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
                     ),
+                    style: GoogleFonts.poppins(fontSize: 14),
+                    onSubmitted: (_) => _loadProfessionals(reset: true),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Filtres rapides
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildFilterChip('Tous', isSelected: true),
+                      _buildFilterChip('Disponible'),
+                      _buildFilterChip('Proche de vous'),
+                      _buildFilterChip('Mieux notés'),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-        ),
+          // Liste des professionnels
+          Expanded(
+            child: _buildBody(),
+          ),
+        ],
       ),
-      body: _buildBody(),
       bottomNavigationBar: _isRoleDetectionComplete && !_isProClient
           ? BottomNavigationBar(
               currentIndex: _selectedIndex,
               onTap: _onItemTapped,
               type: BottomNavigationBarType.fixed,
-              backgroundColor: const Color(0xFFE5E5E5),
+              backgroundColor: const Color(0xFFFFFFFF),
               selectedItemColor: const Color(0xFFFFCC00),
               unselectedItemColor: Colors.grey,
               items: const [
                 BottomNavigationBarItem(
-                  icon: Icon(Icons.dashboard),
+                  icon: Icon(Icons.home_outlined),
                   label: 'Accueil',
                 ),
                 BottomNavigationBarItem(
@@ -805,8 +684,8 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
                   label: 'Recherche',
                 ),
                 BottomNavigationBarItem(
-                  icon: Icon(Icons.receipt_long),
-                  label: 'Mes devis',
+                  icon: Icon(Icons.receipt_long_outlined),
+                  label: 'Devis',
                 ),
                 BottomNavigationBarItem(
                   icon: Icon(Icons.person_outline),
@@ -814,7 +693,7 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
                 ),
               ],
             )
-          : null, // Hide navigation bar for pro clients and while role detection is in progress
+          : null, // Cacher la barre de navigation pour les pros et pendant la détection du rôle
     );
   }
 
@@ -870,11 +749,18 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
   }
 
   Widget _buildProfessionalCard(Professional professional) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -891,7 +777,7 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
           );
         },
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16.0),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -902,47 +788,167 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
                     color: Colors.grey[200],
+                    border: Border.all(
+                      color: const Color(0xFFFFCC00).withOpacity(0.5),
+                      width: 1.5,
+                    ),
                   ),
-                  child: professional.fullAvatarUrl != null
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: CachedNetworkImage(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: professional.fullAvatarUrl != null
+                        ? CachedNetworkImage(
                             imageUrl: professional.fullAvatarUrl!,
                             fit: BoxFit.cover,
-                            placeholder: (context, url) => const Center(
-                              child: CircularProgressIndicator(),
+                            placeholder: (context, url) => Container(
+                              color: Colors.grey[200],
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFCC00)),
+                                  strokeWidth: 2,
+                                ),
+                              ),
                             ),
-                            errorWidget: (context, url, error) =>
-                                const Icon(Icons.person, size: 40),
+                            errorWidget: (context, url, error) => Container(
+                              color: Colors.grey[200],
+                              child: const Icon(
+                                Icons.person,
+                                size: 40,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          )
+                        : Center(
+                            child: Text(
+                              professional.fullName
+                                  .split(' ')
+                                  .map((e) => e.isNotEmpty ? e[0].toUpperCase() : '')
+                                  .join(''),
+                              style: GoogleFonts.poppins(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[600],
+                              ),
+                            ),
                           ),
-                        )
-                      : Center(
-                          child: Text(
-                            professional.fullName
-                                .split(' ')
-                                .map((e) => e.isNotEmpty ? e[0] : '')
-                                .join(''),
-                            style: const TextStyle(fontSize: 20),
-                          ),
-                        ),
+                  ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 16),
               // Détails du professionnel
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Nom et métier
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                professional.displayName,
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                  color: Colors.grey[800],
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                professional.profession,
+                                style: GoogleFonts.poppins(
+                                  color: Colors.grey[600],
+                                  fontSize: 13,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Bouton favori
+                        IconButton(
+                          icon: Icon(
+                            Icons.favorite,
+                            color: professional.isFavorite
+                                ? Colors.red
+                                : Colors.grey[300],
+                            size: 24,
+                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => _toggleFavorite(professional),
+                        ),
+                      ],
+                    ),
+                    
+                    // Note et avis
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFCC00).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.star,
+                                color: Color(0xFFFFCC00),
+                                size: 14,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                professional.rating.toStringAsFixed(1),
+                                style: GoogleFonts.poppins(
+                                  color: const Color(0xFFFFA000),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '(${professional.reviewCount} avis)',
+                          style: GoogleFonts.poppins(
+                            color: Colors.grey[500],
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                    
+                    const SizedBox(height: 8),
+                    
+                    // Localisation
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.location_on_outlined,
+                          size: 16,
+                          color: Colors.grey[500],
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
                           child: Text(
-                            professional.displayName,
+                            professional.address.isNotEmpty 
+                                ? professional.address
+                                : (professional.city?.isNotEmpty == true 
+                                    ? '${professional.city}${professional.postalCode != null ? ', ${professional.postalCode}' : ''}'
+                                    : 'Localisation non disponible'),
                             style: GoogleFonts.poppins(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 16,
+                              color: Colors.grey[600],
+                              fontSize: 12,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -950,82 +956,43 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
                         ),
                       ],
                     ),
-                    Text(
-                      professional.profession,
-                      style: GoogleFonts.poppins(
-                        color: Colors.grey[600],
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        RatingBarIndicator(
-                          rating: professional.rating,
-                          itemBuilder: (context, index) => const Icon(
-                            Icons.star,
-                            color: Colors.amber,
-                          ),
-                          itemCount: 5,
-                          itemSize: 16,
-                          direction: Axis.horizontal,
+                    
+                    // Badge de disponibilité
+                    if (professional.isAvailable) ...{
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '(${professional.reviewCount})',
-                          style: GoogleFonts.poppins(
-                            color: Colors.grey[600],
-                            fontSize: 12,
-                          ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4CAF50).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(Icons.location_on, size: 16, color: Colors.grey),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Paris, France', // À remplacer par la localisation réelle
-                          style: GoogleFonts.poppins(
-                            color: Colors.grey[600],
-                            fontSize: 12,
-                          ),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          icon: Icon(
-                            professional.isFavorite
-                                ? Icons.favorite
-                                : Icons.favorite_border,
-                            color: professional.isFavorite
-                                ? Colors.red
-                                : Colors.grey,
-                          ),
-                          onPressed: () => _toggleFavorite(professional),
-                        ),
-                        if (professional.isAvailable)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF4CAF50),
+                                shape: BoxShape.circle,
+                              ),
                             ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFCC00).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: const Color(0xFFFFCC00).withOpacity(0.3)),
-                            ),
-                            child: Text(
-                              'Disponible',
+                            const SizedBox(width: 4),
+                            Text(
+                              'Disponible maintenant',
                               style: GoogleFonts.poppins(
-                                color: const Color(0xFFFFCC00),
-                                fontSize: 12,
+                                color: const Color(0xFF4CAF50),
+                                fontSize: 11,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
-                          ),
-                      ],
-                    ),
+                          ],
+                        ),
+                      ),
+                    },
                   ],
                 ),
               ),
@@ -1038,10 +1005,12 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
 
   Widget _buildLoader() {
     return _isLoading
-        ? const Padding(
-            padding: EdgeInsets.all(16.0),
+        ? Padding(
+            padding: const EdgeInsets.all(16.0),
             child: Center(
-              child: CircularProgressIndicator(),
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(const Color(0xFFFFCC00)),
+              ),
             ),
           )
         : const SizedBox.shrink();

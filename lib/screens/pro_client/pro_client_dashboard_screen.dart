@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/pro_client_service.dart';
 import '../../services/auth_service.dart';
 import '../../core/app_config.dart';
+import '../professional/professional_clients_screen.dart';
 
 class ProClientDashboardScreen extends StatefulWidget {
   final String token;
@@ -12,11 +13,11 @@ class ProClientDashboardScreen extends StatefulWidget {
   final int initialTab; // 0: Accueil, 1: Client, 2: Professionnel
 
   const ProClientDashboardScreen({
-    Key? key,
+    super.key,
     required this.token,
     required this.userData,
     this.initialTab = 0,
-  }) : super(key: key);
+  });
 
   @override
   State<ProClientDashboardScreen> createState() => _ProClientDashboardScreenState();
@@ -745,7 +746,34 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
     );
   }
 
+  // Méthode pour obtenir l'ID de l'utilisateur connecté
+  String? _getCurrentUserId() {
+    if (widget.userData == null) return null;
+    
+    // Vérifier si l'ID est directement dans userData
+    if (widget.userData!['id'] != null) {
+      return widget.userData!['id'].toString();
+    }
+    
+    // Vérifier la structure imbriquée data.user.id
+    if (widget.userData!['data'] != null && 
+        widget.userData!['data']['user'] != null && 
+        widget.userData!['data']['user']['id'] != null) {
+      return widget.userData!['data']['user']['id'].toString();
+    }
+    
+    // Vérifier la structure imbriquée user.id
+    if (widget.userData!['user'] != null && 
+        widget.userData!['user']['id'] != null) {
+      return widget.userData!['user']['id'].toString();
+    }
+    
+    return null;
+  }
+
   Widget _buildClientModeView() {
+    final currentUserId = _getCurrentUserId();
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -804,7 +832,7 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
           children: [
             _buildModeGridCard(
               'Mes devis',
-              'Consulter les propositions reçues',
+              'Consulter mes demandes de devis',
               Icons.inbox,
               const Color(0xFF2196F3),
               () => Navigator.pushNamed(
@@ -813,6 +841,10 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
                 arguments: {
                   'token': _finalToken,
                   'userData': widget.userData,
+                  'filters': {
+                    'user_id': currentUserId,
+                    'status': 'pending,quoted,accepted',
+                  },
                 },
               ),
             ),
@@ -824,6 +856,10 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
               () => Navigator.pushNamed(context, '/pro-client/client-jobs', arguments: {
                 'token': _finalToken,
                 'userData': widget.userData,
+                'filters': {
+                  'user_id': currentUserId,
+                  'status': 'in_progress,started',
+                },
               }),
             ),
             _buildModeGridCard(
@@ -945,11 +981,18 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
               }),
             ),
             _buildModeGridCard(
-              'Analytics',
-              'Suivre vos performances pro',
-              Icons.analytics,
+              'Mes clients',
+              'Gérer vos clients et leurs demandes',
+              Icons.people,
               const Color(0xFFFF9800),
-              () {},
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProfessionalClientsScreen(token: _finalToken),
+                  ),
+                );
+              },
             ),
           ],
         ),

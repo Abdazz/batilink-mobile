@@ -23,12 +23,12 @@ class UnifiedQuotationDetailScreen extends StatefulWidget {
   final QuotationContext context;
 
   const UnifiedQuotationDetailScreen({
-    Key? key,
+    super.key,
     required this.quotationId,
     required this.quotation,
     required this.token,
     required this.context,
-  }) : super(key: key);
+  });
 
   @override
   _UnifiedQuotationDetailScreenState createState() => _UnifiedQuotationDetailScreenState();
@@ -69,10 +69,10 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
   String? _tempCancellationReason;
   int? _tempCancellationPhotosCount;
 
-  List<File> _startPhotos = [];
-  List<File> _completionPhotos = [];
-  List<File> _cancellationPhotos = [];
-  List<File> _reviewPhotos = [];
+  final List<File> _startPhotos = [];
+  final List<File> _completionPhotos = [];
+  final List<File> _cancellationPhotos = [];
+  final List<File> _reviewPhotos = [];
   List<File> _acceptancePhotos = [];
 
   final TextEditingController _quoteAmountController = TextEditingController();
@@ -122,6 +122,21 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     if (source == null) return urls;
 
     dynamic raw = source;
+    
+    // Handle direct proof_photos array from acceptance_proof
+    if (raw is Map && raw.containsKey('proof_photos') && raw['proof_photos'] is List) {
+      final proofPhotos = raw['proof_photos'] as List;
+      for (final photo in proofPhotos) {
+        if (photo is Map) {
+          final url = photo['url']?.toString() ?? photo['path']?.toString();
+          if (url != null && url.isNotEmpty) {
+            urls.add(_resolveMediaUrl(url));
+          }
+        }
+      }
+      if (urls.isNotEmpty) return urls;
+    }
+    
     // Si string JSON
     if (raw is String) {
       final s = raw.trim();
@@ -153,10 +168,11 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
           final u = _resolveMediaUrl(item);
           if (u.isNotEmpty) urls.add(u);
         } else if (item is Map) {
-          final u = _resolveMediaUrl(
-            item['url']?.toString() ?? item['path']?.toString() ?? item['full_url']?.toString() ?? item['src']?.toString(),
-          );
-          if (u.isNotEmpty) urls.add(u);
+          final url = item['url']?.toString() ?? item['path']?.toString() ?? item['full_url']?.toString() ?? item['src']?.toString();
+          if (url != null && url.isNotEmpty) {
+            final u = _resolveMediaUrl(url);
+            if (u.isNotEmpty) urls.add(u);
+          }
         }
       }
       return urls;
@@ -464,7 +480,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
   }
 
   Future<void> _handleClientAcceptance(String token) async {
-    final TextEditingController _clientNotesController = TextEditingController(text: "Devis accepté via l'application mobile");
+    final TextEditingController clientNotesController = TextEditingController(text: "Devis accepté via l'application mobile");
     _acceptancePhotos = [];
 
     await showDialog<void>(
@@ -479,7 +495,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(
-                    controller: _clientNotesController,
+                    controller: clientNotesController,
                     decoration: const InputDecoration(
                       labelText: 'Notes du client (optionnel, ≤ 1000)',
                       border: OutlineInputBorder(),
@@ -525,7 +541,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                     ? null
                     : () async {
                         Navigator.of(context).pop();
-                        await _submitClientAcceptance(token, clientNotes: _clientNotesController.text.trim());
+                        await _submitClientAcceptance(token, clientNotes: clientNotesController.text.trim());
                       },
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
                 child: Text('Confirmer', style: GoogleFonts.poppins()),
@@ -678,7 +694,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                     ),
                     if (_tempStartPhotosCount != null && _tempStartPhotosCount! > 0) ...[
                       const SizedBox(height: 8),
-                      Text('${_tempStartPhotosCount} photo(s) sélectionnée(s)', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
+                      Text('$_tempStartPhotosCount photo(s) sélectionnée(s)', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
                     ],
                   ],
                 ),
@@ -900,7 +916,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                     ),
                     if (_tempCompletionPhotosCount != null && _tempCompletionPhotosCount! > 0) ...[
                       const SizedBox(height: 8),
-                      Text('${_tempCompletionPhotosCount} photo(s) sélectionnée(s)', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
+                      Text('$_tempCompletionPhotosCount photo(s) sélectionnée(s)', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
                     ],
                   ],
                 ),
@@ -1156,7 +1172,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                     ),
                     if (_tempCancellationPhotosCount != null && _tempCancellationPhotosCount! > 0) ...[
                       const SizedBox(height: 8),
-                      Text('${_tempCancellationPhotosCount} justificatif(s) ajouté(s)', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
+                      Text('$_tempCancellationPhotosCount justificatif(s) ajouté(s)', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
                     ],
                   ],
                 ),
@@ -1283,7 +1299,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
+                    SizedBox(
                       width: double.infinity,
                       child: Row(
                         children: [
@@ -1826,64 +1842,12 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                     ),
                   if (photoUrls.isNotEmpty) ...[
                     const SizedBox(height: 12),
-                    SizedBox(
-                      height: 72,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemBuilder: (context, i) {
-                          final url = photoUrls[i];
-                          return ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: CachedNetworkImage(
-                              imageUrl: url,
-                              httpHeaders: _imageHeaders(),
-                              width: 72,
-                              height: 72,
-                              fit: BoxFit.cover,
-                              placeholder: (c, _) => Container(width:72,height:72,color: Colors.grey[100],child: const Center(child: SizedBox(width:18,height:18,child: CircularProgressIndicator(strokeWidth:2)))),
-                              errorWidget: (c, _, __) => Container(
-                                width: 72,
-                                height: 72,
-                                color: Colors.grey[200],
-                                child: const Icon(Icons.broken_image, color: Colors.grey),
-                              ),
-                            ),
-                          );
-                        },
-                        separatorBuilder: (_, __) => const SizedBox(width: 8),
-                        itemCount: photoUrls.length,
-                      ),
-                    ),
+                    ImageGalleryViewer(urls: photoUrls),
                     const SizedBox(height: 16),
                   ]
                   else if (_acceptancePhotos.isNotEmpty) ...[
                     const SizedBox(height: 12),
-                    SizedBox(
-                      height: 72,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemBuilder: (context, i) {
-                          final f = _acceptancePhotos[i];
-                          return ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.file(
-                              f,
-                              width: 72,
-                              height: 72,
-                              fit: BoxFit.cover,
-                              errorBuilder: (c, e, s) => Container(
-                                width: 72,
-                                height: 72,
-                                color: Colors.grey[200],
-                                child: const Icon(Icons.broken_image, color: Colors.grey),
-                              ),
-                            ),
-                          );
-                        },
-                        separatorBuilder: (_, __) => const SizedBox(width: 8),
-                        itemCount: _acceptancePhotos.length,
-                      ),
-                    ),
+                    ImageGalleryViewer(urls: _acceptancePhotos.map((f) => _resolveMediaUrl(f.path)).toList()),
                     const SizedBox(height: 16),
                   ],
                 ],
@@ -1930,34 +1894,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                   ),
                 if (startPhotoUrls.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  SizedBox(
-                    height: 72,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemBuilder: (context, i) {
-                        final url = startPhotoUrls[i];
-                        return ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: CachedNetworkImage(
-                            imageUrl: url,
-                            httpHeaders: _imageHeaders(),
-                            width: 72,
-                            height: 72,
-                            fit: BoxFit.cover,
-                            placeholder: (c, _) => Container(width:72,height:72,color: Colors.grey[100],child: const Center(child: SizedBox(width:18,height:18,child: CircularProgressIndicator(strokeWidth:2)))),
-                            errorWidget: (c, _, __) => Container(
-                              width: 72,
-                              height: 72,
-                              color: Colors.grey[200],
-                              child: const Icon(Icons.broken_image, color: Colors.grey),
-                            ),
-                          ),
-                        );
-                      },
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemCount: startPhotoUrls.length,
-                    ),
-                  ),
+                  ImageGalleryViewer(urls: startPhotoUrls),
                   const SizedBox(height: 16),
                 ],
               ],
@@ -2013,34 +1950,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                   ),
                 if (completionPhotoUrls.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  SizedBox(
-                    height: 72,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemBuilder: (context, i) {
-                        final url = completionPhotoUrls[i];
-                        return ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: CachedNetworkImage(
-                            imageUrl: url,
-                            httpHeaders: _imageHeaders(),
-                            width: 72,
-                            height: 72,
-                            fit: BoxFit.cover,
-                            placeholder: (c, _) => Container(width:72,height:72,color: Colors.grey[100],child: const Center(child: SizedBox(width:18,height:18,child: CircularProgressIndicator(strokeWidth:2)))),
-                            errorWidget: (c, _, __) => Container(
-                              width: 72,
-                              height: 72,
-                              color: Colors.grey[200],
-                              child: const Icon(Icons.broken_image, color: Colors.grey),
-                            ),
-                          ),
-                        );
-                      },
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemCount: completionPhotoUrls.length,
-                    ),
-                  ),
+                  ImageGalleryViewer(urls: completionPhotoUrls),
                   const SizedBox(height: 16),
                 ],
               ],
@@ -2086,34 +1996,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                   ),
                 if (cancellationPhotoUrls.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  SizedBox(
-                    height: 72,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemBuilder: (context, i) {
-                        final url = cancellationPhotoUrls[i];
-                        return ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: CachedNetworkImage(
-                            imageUrl: url,
-                            httpHeaders: _imageHeaders(),
-                            width: 72,
-                            height: 72,
-                            fit: BoxFit.cover,
-                            placeholder: (c, _) => Container(width:72,height:72,color: Colors.grey[100],child: const Center(child: SizedBox(width:18,height:18,child: CircularProgressIndicator(strokeWidth:2)))),
-                            errorWidget: (c, _, __) => Container(
-                              width: 72,
-                              height: 72,
-                              color: Colors.grey[200],
-                              child: const Icon(Icons.broken_image, color: Colors.grey),
-                            ),
-                          ),
-                        );
-                      },
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemCount: cancellationPhotoUrls.length,
-                    ),
-                  ),
+                  ImageGalleryViewer(urls: cancellationPhotoUrls),
                   const SizedBox(height: 16),
                 ],
               ],
@@ -2181,7 +2064,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
                   ],
                 ),
               );
-            })).toList(),
+            })),
           ],
         ],
       ),
@@ -2253,7 +2136,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
           if (hasTempStartData && _tempStartDescription != null)
             _buildDetailItem('📝 Description temporaire', _tempStartDescription!, Icons.edit_note, valueColor: Colors.orange),
           if (hasTempStartData && _tempStartPhotosCount != null && _tempStartPhotosCount! > 0)
-            _buildDetailItem('📝 Photos temporaires', '${_tempStartPhotosCount} photo(s)', Icons.photo_camera, valueColor: Colors.orange),
+            _buildDetailItem('📝 Photos temporaires', '$_tempStartPhotosCount photo(s)', Icons.photo_camera, valueColor: Colors.orange),
         ],
       ));
     }
@@ -2285,7 +2168,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
           if (hasTempCompletionData && _tempMaterialsUsed != null)
             _buildDetailItem('📝 Matériaux temporaires', _tempMaterialsUsed!, Icons.edit, valueColor: Colors.orange),
           if (hasTempCompletionData && _tempCompletionPhotosCount != null && _tempCompletionPhotosCount! > 0)
-            _buildDetailItem('📝 Photos temporaires', '${_tempCompletionPhotosCount} photo(s)', Icons.photo_camera, valueColor: Colors.orange),
+            _buildDetailItem('📝 Photos temporaires', '$_tempCompletionPhotosCount photo(s)', Icons.photo_camera, valueColor: Colors.orange),
         ],
       ));
     }
@@ -2313,7 +2196,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
           if (hasTempCancellationData && _tempCancellationReason != null)
             _buildDetailItem('📝 Raison temporaire', _tempCancellationReason!, Icons.edit_note, valueColor: Colors.orange),
           if (hasTempCancellationData && _tempCancellationPhotosCount != null && _tempCancellationPhotosCount! > 0)
-            _buildDetailItem('📝 Justificatifs temporaires', '${_tempCancellationPhotosCount} fichier(s)', Icons.photo_camera, valueColor: Colors.orange),
+            _buildDetailItem('📝 Justificatifs temporaires', '$_tempCancellationPhotosCount fichier(s)', Icons.photo_camera, valueColor: Colors.orange),
         ],
       ));
     }
@@ -2326,7 +2209,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
       steps.add(_buildStepCard(
         '⭐ Avis en cours',
         [
-          Container(
+          SizedBox(
             width: double.infinity,
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -2366,7 +2249,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
         '⭐ Avis',
         [
           if (review['rating'] != null)
-            Container(
+            SizedBox(
               width: double.infinity,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -3074,5 +2957,134 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     _reviewCommentController.dispose();
     _materialsUsedController.dispose();
     super.dispose();
+  }
+
+  // Ajoute cette fonction dans la classe UnifiedQuotationDetailScreen ou _UnifiedQuotationDetailScreenState :
+  List<String> _getAttachmentImageUrls(List attachments) {
+    return attachments
+        .where((att) {
+          final name = (att['original_name'] ?? att['name'] ?? '').toLowerCase();
+          return name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png');
+        })
+        .map((att) {
+          final url = att['url'] ?? att['path'];
+          if (url == null) return '';
+          if (!url.toString().startsWith('http')) {
+            return AppConfig.buildMediaUrl(url.toString().startsWith('/') ? url.toString() : '/${url.toString()}');
+          }
+          return url.toString();
+        })
+        .where((u) => u.isNotEmpty)
+        .toList();
+  }
+}
+
+class ImageGalleryViewer extends StatelessWidget {
+  final List<String> urls;
+  const ImageGalleryViewer({super.key, required this.urls});
+
+  @override
+  Widget build(BuildContext context) {
+    if (urls.isEmpty) return const Text('Aucune image', style: TextStyle(color: Colors.grey));
+    int gridCount = urls.length < 3 ? urls.length : 3;
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: gridCount, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 1),
+      itemCount: urls.length,
+      itemBuilder: (context, i) {
+        final url = urls[i];
+        return GestureDetector(
+          onTap: () => showDialog(
+            context: context,
+            barrierColor: Colors.black.withOpacity(0.90),
+            builder: (_) => _GalleryFullScreenViewer(urls: urls, initialIndex: i),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: CachedNetworkImage(
+              imageUrl: url,
+              width: 92, height: 92,
+              fit: BoxFit.cover,
+              placeholder: (c, _) => Container(
+                color: Colors.grey[100],
+                child: const Center(child: SizedBox(width:22,height:22,child:CircularProgressIndicator(strokeWidth:2))),
+              ),
+              errorWidget: (c,_,__) => Container(
+                color: Colors.grey[200],
+                child: const Icon(Icons.broken_image, color: Colors.grey),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _GalleryFullScreenViewer extends StatefulWidget {
+  final List<String> urls;
+  final int initialIndex;
+  const _GalleryFullScreenViewer({required this.urls, required this.initialIndex});
+  @override
+  State<_GalleryFullScreenViewer> createState() => _GalleryFullScreenViewerState();
+}
+class _GalleryFullScreenViewerState extends State<_GalleryFullScreenViewer> {
+  late int _index;
+  @override
+  void initState() {
+    super.initState();
+    _index = widget.initialIndex;
+  }
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          PageView.builder(
+            itemCount: widget.urls.length,
+            controller: PageController(initialPage: _index),
+            onPageChanged: (v) => setState(() => _index = v),
+            itemBuilder: (ctx, i) {
+              final url = widget.urls[i];
+              return InteractiveViewer(
+                minScale: 1,
+                maxScale: 4,
+                child: Center(
+                  child: CachedNetworkImage(
+                    imageUrl: url,
+                    fit: BoxFit.contain,
+                    httpHeaders: null,
+                  ),
+                ),
+              );
+            },
+          ),
+          Positioned(
+            top: 36, right: 18,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 32),
+              onPressed: () => Navigator.of(context).pop(),
+              splashRadius: 26,
+            ),
+          ),
+          if (widget.urls.length > 1)
+            Positioned(
+              bottom: 30, left: 0, right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(48)),
+                  child: Text(
+                    '${_index+1} / ${widget.urls.length}',
+                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

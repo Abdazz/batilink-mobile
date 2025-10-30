@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Configuration par défaut : HTTPS uniquement -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- Utiliser les certificats système par défaut -->
+            <certificates src="system"/>
+            <!-- Autoriser les certificats utilisateur -->
+            <certificates src="user"/>
+        </trust-anchors>
+    </base-config>
+
+    <!-- Configuration pour le domaine de production -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">batilink.golden-technologies.com</domain>
+        <domain includeSubdomains="true">golden-technologies.com</domain>
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="user"/>
+        </trust-anchors>
+    </domain-config>
+
+    <!-- Configuration pour l'IP directe (fallback) -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">147.79.115.191</domain>
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="user"/>
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

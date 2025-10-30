@@ -15,11 +15,11 @@ class ProfessionalDetailScreen extends StatefulWidget {
   final Map<String, dynamic>? userData;
 
   const ProfessionalDetailScreen({
-    Key? key,
+    super.key,
     required this.professionalId,
     this.token,
     this.userData,
-  }) : super(key: key);
+  });
 
   @override
   _ProfessionalDetailScreenState createState() => _ProfessionalDetailScreenState();
@@ -32,15 +32,17 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
   late TabController _tabController;
   List<Map<String, dynamic>> _reviews = [];
   List<Map<String, dynamic>> _portfolios = [];
-  Map<String, dynamic> _reviewDetails = {}; // Pour stocker les détails des devis associés aux avis
+  final Map<String, dynamic> _reviewDetails = {}; // Pour stocker les détails des devis associés aux avis
   final List<Map<String, dynamic>> _tabs = [
     {'label': 'À propos', 'icon': Icons.info_outline},
+    {'label': 'Horaires', 'icon': Icons.access_time},
     {'label': 'Portfolio', 'icon': Icons.photo_library_outlined},
     {'label': 'Avis', 'icon': Icons.star_border},
   ];
-
+  
   // Contrôleurs de défilement pour chaque onglet
   final ScrollController _aboutScrollController = ScrollController();
+  final ScrollController _scheduleScrollController = ScrollController();
   final ScrollController _portfolioScrollController = ScrollController();
   final ScrollController _reviewsScrollController = ScrollController();
 
@@ -66,7 +68,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
       // Faire défiler vers le haut quand on change d'onglet
       WidgetsBinding.instance.addPostFrameCallback((_) {
         switch (_tabController.index) {
-          case 0:
+          case 0: // À propos
             if (_aboutScrollController.hasClients) {
               _aboutScrollController.animateTo(
                 0.0,
@@ -75,7 +77,16 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
               );
             }
             break;
-          case 1:
+          case 1: // Horaires
+            if (_scheduleScrollController.hasClients) {
+              _scheduleScrollController.animateTo(
+                0.0,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+              );
+            }
+            break;
+          case 2: // Portfolio
             if (_portfolioScrollController.hasClients) {
               _portfolioScrollController.animateTo(
                 0.0,
@@ -84,7 +95,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
               );
             }
             break;
-          case 2:
+          case 3: // Avis
             if (_reviewsScrollController.hasClients) {
               _reviewsScrollController.animateTo(
                 0.0,
@@ -119,16 +130,46 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
         return;
       }
 
-      final data = await ApiService.get('professionals/${widget.professionalId}');
+      print('Tentative de chargement des données du professionnel avec l\'ID: ${widget.professionalId}');
+      
+      // Essayer avec différentes clés possibles pour les horaires d'ouverture
+      final data = await ApiService.get('professionals/${widget.professionalId}?include=business_hours,hours,schedule');
 
-      print('Données reçues: $data');
+      print('=== RÉPONSE BRUTE DE L\'API ===');
+      print(data);
 
       if (data != null) {
         // Structure de réponse pour les détails du professionnel
         final Map<String, dynamic> responseData = data is Map<String, dynamic> ? data : {};
-        final Map<String, dynamic> professionalData = responseData['data'] is Map<String, dynamic>
-            ? responseData['data'] as Map<String, dynamic>
-            : {};
+        Map<String, dynamic> professionalData = {};
+        
+        // Essayer différentes structures de réponse possibles
+        if (responseData['data'] is Map<String, dynamic>) {
+          professionalData = responseData['data'] as Map<String, dynamic>;
+        } else if (responseData['professional'] is Map<String, dynamic>) {
+          professionalData = responseData['professional'] as Map<String, dynamic>;
+        } else if (responseData.isNotEmpty) {
+          professionalData = responseData;
+        }
+        
+        print('=== DONNÉES DU PROFESSIONNEL EXTRACTED ===');
+        print(professionalData);
+        
+        // Vérifier différentes clés possibles pour les horaires
+        final businessHours = professionalData['business_hours'] ?? 
+                            professionalData['businessHours'] ??
+                            professionalData['hours'] ??
+                            professionalData['opening_hours'] ??
+                            professionalData['schedule'];
+        
+        print('=== HORAIRES D\'OUVERTURE TROUVÉS ===');
+        print('Type: ${businessHours?.runtimeType}');
+        print('Valeur: $businessHours');
+        
+        // Si on a des horaires, s'assurer qu'ils sont dans le bon format
+        if (businessHours != null) {
+          professionalData['business_hours'] = businessHours;
+        }
 
         if (mounted) {
           setState(() {
@@ -221,7 +262,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
               });
             }
           } catch (e) {
-            print('Erreur lors du chargement du devis ${quotationId}: $e');
+            print('Erreur lors du chargement du devis $quotationId: $e');
           }
         }
       }
@@ -394,7 +435,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
     );
   }
 
-  Widget _buildAboutTab() {
+  Widget _buildScheduleTab() {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -403,6 +444,68 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
       return const Center(child: Text('Aucune donnée disponible'));
     }
 
+    final Map<String, dynamic>? businessHours = _professional!.businessHours;
+    
+    return SingleChildScrollView(
+      controller: _scheduleScrollController,
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section des horaires d'ouverture
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFFFCC00).withOpacity(0.1),
+                  spreadRadius: 1,
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+              border: Border.all(
+                color: const Color(0xFFFFCC00).withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Horaires d'ouverture",
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFFFFCC00),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (businessHours == null || businessHours.isEmpty)
+                  _buildNoHoursAvailable()
+                else
+                  ..._buildBusinessHours(businessHours),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAboutTab() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_professional == null) {
+      return const Center(child: Text('Aucune donnée disponible'));
+    }
+    
+    final Map<String, dynamic>? businessHours = _professional!.businessHours;
     return SingleChildScrollView(
       controller: _aboutScrollController,
       padding: const EdgeInsets.all(16.0),
@@ -451,148 +554,55 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
             ),
             const SizedBox(height: 24),
           ],
+          Divider(height: 28, thickness: 1, color: Colors.grey[200]),
 
-          // Adresse et localisation
-          Text(
-            'Localisation',
-            style: GoogleFonts.poppins(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFFFFCC00),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            margin: const EdgeInsets.only(bottom: 16),
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFFFCC00).withOpacity(0.08),
-                  spreadRadius: 2,
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-              border: Border.all(
-                color: const Color(0xFFFFCC00).withOpacity(0.1),
-                width: 1,
+          // Bouton pour accéder aux horaires
+          GestureDetector(
+            onTap: () {
+              // Basculer vers l'onglet des horaires
+              _tabController.animateTo(1);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF9E6),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFFE680)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.access_time, color: Color(0xFFFFB700)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Voir les horaires d'ouverture",
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        if (businessHours != null && businessHours.isNotEmpty)
+                          Text(
+                            'Cliquez pour voir les horaires',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: Colors.grey),
+                ],
               ),
             ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFFFFCC00).withOpacity(0.1),
-                      ),
-                      child: const Icon(Icons.location_on, color: Color(0xFFFFCC00), size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Localisation',
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _professional?.address != null && _professional!.address.isNotEmpty
-                                ? _professional!.address
-                                : 'Adresse non spécifiée',
-                            style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFFFFCC00).withOpacity(0.1),
-                      ),
-                      child: const Icon(Icons.place, color: Color(0xFFFFCC00), size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Ville',
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${_professional?.city ?? 'Ville non spécifiée'}, ${_professional?.postalCode ?? ''}',
-                            style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                if (_professional?.radiusKm != null && _professional!.radiusKm > 0) ...[
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(0xFFFFCC00).withOpacity(0.1),
-                        ),
-                        child: const Icon(Icons.gps_fixed, color: Color(0xFFFFCC00), size: 20),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Rayon d\'intervention',
-                              style: GoogleFonts.poppins(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black87,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${_professional!.radiusKm} km',
-                              style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
           ),
-
-          // Informations professionnelles détaillées
+          const SizedBox(height: 24),
+          Divider(height: 28, thickness: 1, color: Colors.grey[200]),
+            // Suite : Informations professionnelles détaillées
           Text(
             'Informations professionnelles',
             style: GoogleFonts.poppins(
@@ -1250,278 +1260,232 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                   ),
                 )
               : SafeArea(
-              child: Column(
-                children: [
-                  // En-tête avec photo et informations principales (hauteur contrainte)
-                  Container(
-                    height: 400,
-                    child: SingleChildScrollView(
-                      child: _buildHeaderSection(),
-                    ),
-                  ),
-
-                  // Barre d'onglets - directement sous la photo
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.1),
-                          spreadRadius: 1,
-                          blurRadius: 3,
-                          offset: const Offset(0, 2),
+                  child: Column(
+                    children: [
+                      _buildHeaderSection(),
+                      Container(
+                        margin: const EdgeInsets.only(top: 0, bottom: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        color: Colors.transparent,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: List.generate(_tabs.length, (index) {
+                            bool isSelected = _tabController.index == index;
+                            return Expanded(
+                              child: GestureDetector(
+                                onTap: () {
+                                  _tabController.animateTo(index);
+                                },
+                                child: Container(
+                                  margin: const EdgeInsets.symmetric(horizontal: 1),
+                                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 2),
+                                  decoration: BoxDecoration(
+                                    color: isSelected ? const Color(0xFFFFCC00) : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: isSelected ? const Color(0xFFFFCC00) : Colors.grey[300]!,
+                                      width: 1,
+                                    ),
+                                    boxShadow: isSelected ? [
+                                      BoxShadow(
+                                        color: const Color(0xFFFFCC00).withOpacity(0.3),
+                                        blurRadius: 6,
+                                        offset: const Offset(0, 2),
+                                      )
+                                    ] : [],
+                                  ),
+                                  child: Center(
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          _tabs[index]['icon'],
+                                          size: 18,
+                                          color: isSelected ? Colors.white : Colors.grey[600],
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          _tabs[index]['label'],
+                                          style: GoogleFonts.poppins(
+                                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                            color: isSelected ? Colors.white : Colors.grey[700],
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
                         ),
-                      ],
-                    ),
-                    child: TabBar(
-                      controller: _tabController,
-                      tabs: _tabs
-                          .map((tab) => Tab(
-                                text: tab['label'],
-                                icon: Icon(tab['icon']),
-                              ))
-                          .toList(),
-                      onTap: (index) {
-                        // L'index est géré automatiquement par le TabController
-                      },
-                      labelColor: const Color(0xFFFFCC00),
-                      unselectedLabelColor: Colors.grey,
-                      indicatorColor: const Color(0xFFFFCC00),
-                      indicatorWeight: 3,
-                    ),
+                      ),
+                      // Contenu des onglets
+                      Expanded(
+                        child: TabBarView(
+                          controller: _tabController,
+                          children: [
+                            // Chaque tab content est déjà scrollable
+                            _buildAboutTab(),
+                            _buildScheduleTab(),
+                            _buildPortfolioTab(),
+                            _buildReviewsTab(),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-
-                  // Contenu des onglets (espace restant)
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildAboutTab(),
-                        _buildPortfolioTab(),
-                        _buildReviewsTab(),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      floatingActionButton: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.symmetric(horizontal: 33, vertical: 12),
+        child: ElevatedButton(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => QuoteRequestScreen(
+                professionalId: widget.professionalId,
+                professionalName: _professional!.displayName ?? 'Professionnel',
+                professionalJob: _professional!.jobTitle ?? _professional!.profession ?? 'Service',
+                token: widget.token,
+                userData: widget.userData,
               ),
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => QuoteRequestScreen(
-              professionalId: widget.professionalId,
-              professionalName: _professional?.displayName ?? 'Professionnel',
-              professionalJob: _professional?.jobTitle ?? _professional?.profession ?? 'Service',
-              token: widget.token,
-              userData: widget.userData,
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFD7263D),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(19),
             ),
+            elevation: 6,
+          ),
+          child: Text(
+            'Réserver maintenant',
+            style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
           ),
         ),
-        backgroundColor: const Color(0xFFFFCC00),
-        icon: const Icon(Icons.request_quote),
-        label: const Text('Demander un devis'),
       ),
     );
   }
 
   Widget _buildHeaderSection() {
     return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(left: 20, right: 20, top: 28, bottom: 18),
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFFFFCC00),
-            Colors.white,
-          ],
-        ),
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x22AAAAAA),
+            blurRadius: 12,
+            offset: Offset(0, 2),
+          ),
+        ],
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Photo et statut uniquement - les infos détaillées vont dans les onglets
-          Stack(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Container(
-                height: 250,
-                decoration: BoxDecoration(
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(20),
-                    bottomRight: Radius.circular(20),
-                  ),
-                ),
-                child: _professional?.fullAvatarUrl != null
-                    ? ClipRRect(
-                        borderRadius: const BorderRadius.only(
-                          bottomLeft: Radius.circular(20),
-                          bottomRight: Radius.circular(20),
-                        ),
-                        child: CachedNetworkImage(
-                          imageUrl: _professional!.fullAvatarUrl!,
-                          fit: BoxFit.cover,
-                          placeholder: (context, url) => Container(
-                            color: Colors.grey[300],
-                            child: const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                          ),
-                          errorWidget: (context, url, error) =>
-                              Container(
-                                color: Colors.grey[300],
-                                child: const Icon(Icons.person, size: 100, color: Colors.grey),
-                              ),
-                        ),
-                      )
-                    : Container(
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: const BorderRadius.only(
-                            bottomLeft: Radius.circular(20),
-                            bottomRight: Radius.circular(20),
-                          ),
-                        ),
-                        child: const Center(
-                          child: Icon(Icons.person, size: 100, color: Colors.grey),
+              CircleAvatar(
+                radius: 42,
+                backgroundColor: Colors.grey[200],
+                backgroundImage: _professional?.fullAvatarUrl != null
+                    ? NetworkImage(_professional!.fullAvatarUrl!)
+                    : null,
+                child: _professional?.fullAvatarUrl == null
+                    ? Icon(Icons.person, size: 52, color: Colors.grey[400])
+                    : null,
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _professional?.displayName ?? '',
+                      style: GoogleFonts.poppins(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _professional?.jobTitle?.isNotEmpty == true
+                          ? (_professional?.jobTitle ?? _professional?.profession ?? '')
+                          : (_professional?.profession ?? ''),
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: Colors.grey[700],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFE6E6),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _professional?.hourlyRate != null
+                            ? '${_professional!.hourlyRate.toStringAsFixed(0)} €/h'
+                            : '-- €/h',
+                        style: GoogleFonts.poppins(
+                          color: const Color(0xFFD7263D),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
                         ),
                       ),
-              ),
-
-              // Statut de disponibilité
-              Positioned(
-                top: 16,
-                right: 16,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _professional?.isAvailable == true
-                        ? Colors.green.withValues(alpha: 0.9)
-                        : Colors.red.withValues(alpha: 0.9),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    _professional?.isAvailable == true ? 'Disponible' : 'Indisponible',
-                    style: GoogleFonts.poppins(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
                     ),
-                  ),
+                  ],
                 ),
-              ),
+              )
             ],
           ),
-
-          // Informations essentielles juste sous la photo (nom, métier, note)
-          Container(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Nom et métier avec badge professionnel
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _professional?.displayName ?? '',
-                            style: GoogleFonts.poppins(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFCC00).withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(15),
-                              border: Border.all(
-                                color: const Color(0xFFFFCC00),
-                                width: 1,
-                              ),
-                            ),
-                            child: Text(
-                              _professional?.jobTitle?.isNotEmpty == true
-                                  ? (_professional?.jobTitle ?? _professional?.profession ?? 'Service non spécifié')
-                                  : (_professional?.profession ?? 'Service non spécifié'),
-                              style: GoogleFonts.poppins(
-                                fontSize: 14,
-                                color: const Color(0xFFFFCC00),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFFFFCC00).withOpacity(0.1),
-                        border: Border.all(
-                          color: const Color(0xFFFFCC00),
-                          width: 2,
-                        ),
-                      ),
-                      child: Icon(
-                        Icons.verified,
-                        color: const Color(0xFFFFCC00),
-                        size: 24,
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 16),
-
-                // Note et informations principales
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              RatingBarIndicator(
-                                rating: _professional?.rating ?? 0,
-                                itemBuilder: (context, _) => const Icon(
-                                  Icons.star,
-                                  color: Colors.amber,
-                                ),
-                                itemCount: 5,
-                                itemSize: 20.0,
-                                direction: Axis.horizontal,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                '${(_professional?.rating ?? 0).toStringAsFixed(1)}/5',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: const Color(0xFFFFCC00),
-                                ),
-                              ),
-                            ],
-                          ),
-                          Text(
-                            '${_professional?.reviewCount ?? 0} avis clients',
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+          const SizedBox(height: 18),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildStatItem(Icons.work, '${_professional?.experienceYears ?? 0} ans', 'Expérience'),
+              _buildStatItem(Icons.people_alt_rounded, '${_professional?.completedJobs ?? 0}', 'Clients'),
+              _buildStatItem(Icons.star, '${_professional?.rating?.toStringAsFixed(1) ?? '--'}', 'Avis'),
+            ],
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(IconData icon, String value, String label) {
+    return Container(
+      width: 90,
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.09),
+            blurRadius: 6,
+            offset: const Offset(0,2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: const Color(0xFFFFCC00), size: 22),
+          const SizedBox(height: 5),
+          Text(value, style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black)),
+          Text(label, style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[700], fontWeight: FontWeight.w500)),
         ],
       ),
     );
@@ -1629,5 +1593,100 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
         ),
       );
     }
+  }
+
+  // Méthode pour afficher un message lorsque les horaires ne sont pas disponibles
+  Widget _buildNoHoursAvailable() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, color: Colors.orange, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Les horaires d\'ouverture ne sont pas disponibles pour le moment.',
+              style: GoogleFonts.poppins(
+                color: Colors.orange[700],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Méthode pour construire la liste des horaires d'ouverture
+  List<Widget> _buildBusinessHours(Map<String, dynamic> hours) {
+    print('=== BUILD BUSINESS HOURS ===');
+    print('Heures reçues: $hours');
+    
+    final daysLabels = [
+      'Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'
+    ];
+    final keys = [
+      'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'
+    ];
+    
+    return List.generate(7, (i) {
+      final dayKey = keys[i];
+      final val = hours[dayKey];
+      
+      print('Traitement du jour: $dayKey');
+      print('Valeur pour $dayKey: $val');
+      
+      String open = '';
+      String close = '';
+      
+      if (val is Map) {
+        open = (val['open'] ?? '').toString();
+        close = (val['close'] ?? '').toString();
+      } else if (val is String) {
+        // Essayer de parser si c'est une chaîne au format "09:00-18:00"
+        try {
+          final parts = val.split('-');
+          if (parts.length == 2) {
+            open = parts[0].trim();
+            close = parts[1].trim();
+          }
+        } catch (e) {
+          print('Erreur lors du parsing des horaires: $e');
+        }
+      }
+      
+      final isClosed = open.isEmpty || close.isEmpty;
+      print('$dayKey - Ouvert: $open, Fermé: $close, Est fermé: $isClosed');
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3.5),
+        child: Row(
+          children: [
+            const Icon(Icons.access_time, color: Color(0xFFFFCC00), size: 20),
+            const SizedBox(width: 10),
+            SizedBox(
+              width: 84,
+              child: Text(
+                daysLabels[i],
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w500, color: Colors.grey[800], fontSize: 15),
+              ),
+            ),
+            if (isClosed)
+              Expanded(
+                child: Text(
+                  'Fermé',
+                  style: GoogleFonts.poppins(fontStyle: FontStyle.italic, color: Colors.grey[500]),
+                ),
+              )
+            else
+              Expanded(
+                child: Text(
+                  '$open - $close',
+                  style: GoogleFonts.poppins(color: Colors.grey[900], fontWeight: FontWeight.w600),
+                ),
+              ),
+          ],
+        ),
+      );
+    });
   }
 }

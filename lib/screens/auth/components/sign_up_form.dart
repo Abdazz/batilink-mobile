@@ -66,17 +66,47 @@ class _SignUpFormState extends State<SignUpForm> {
         password: _password,
         passwordConfirmation: _password,
         role: role,
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 30));
 
       setState(() { _loading = false; });
-      
+
+      // Vérifier d'abord si la réponse est un succès
       if (response.statusCode == 201 || response.statusCode == 200) {
+        try {
+          final body = jsonDecode(response.body);
+          if (body is Map && body['success'] == true) {
+            showDialog(
+              context: context,
+              builder: (_) => AlertDialog(
+                title: const Text('Inscription réussie'),
+                content: Text(
+                  role == 'professional'
+                    ? 'Votre compte professionnel doit être activé par un administrateur avant l\'accès au dashboard.'
+                    : (role == 'pro_client'
+                        ? 'Votre compte Pro-Client doit être activé par un administrateur avant l\'accès au dashboard.'
+                        : 'Votre compte client a été créé avec succès. Vous pouvez maintenant vous connecter.'),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.popUntil(context, (route) => route.isFirst),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            );
+            return; // Sortir de la fonction en cas de succès
+          }
+        } catch (jsonError) {
+          print('Erreur de parsing JSON: $jsonError');
+        }
+
+        // Si on ne peut pas parser mais que le status est OK, considérer comme succès
         showDialog(
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Inscription réussie'),
             content: Text(
-              role == 'professional' 
+              role == 'professional'
                 ? 'Votre compte professionnel doit être activé par un administrateur avant l\'accès au dashboard.'
                 : (role == 'pro_client'
                     ? 'Votre compte Pro-Client doit être activé par un administrateur avant l\'accès au dashboard.'
@@ -90,22 +120,36 @@ class _SignUpFormState extends State<SignUpForm> {
             ],
           ),
         );
-      } else {
-        String message = 'Erreur inconnue';
-        try {
-          final body = jsonDecode(response.body);
-          if (body is Map && body['message'] != null) {
-            message = body['message'];
-          }
-        } catch (_) {}
-        setState(() {
-          _error = message;
-        });
+        return;
       }
+
+      // Si on arrive ici, c'est une vraie erreur
+      String message = 'Erreur inconnue';
+      try {
+        final body = jsonDecode(response.body);
+        if (body is Map && body['message'] != null) {
+          message = body['message'];
+        }
+      } catch (_) {}
+      setState(() {
+        _error = message;
+      });
     } catch (e) {
+      print('Erreur lors de l\'inscription: $e');
       setState(() {
         _loading = false;
-        _error = "Erreur de connexion au serveur. Veuillez réessayer.";
+        // Message plus spécifique pour les erreurs de connexion
+        if (e.toString().contains('Failed host lookup') || e.toString().contains('No address')) {
+          _error = "Problème DNS: Le nom de domaine ne peut pas être résolu. Essayez de changer de réseau (WiFi/mobile) ou utilisez un VPN.";
+        } else if (e.toString().contains('Operation not permitted') || e.toString().contains('errno = 1')) {
+          _error = "Problème de sécurité réseau: L'appareil bloque la connexion sécurisée. Essayez de changer de réseau WiFi ou activez un VPN.";
+        } else if (e.toString().contains('ClientException') || e.toString().contains('connection')) {
+          _error = "Erreur de connexion. Vérifiez votre connexion internet et réessayez.";
+        } else if (e.toString().contains('TimeoutException')) {
+          _error = "Délai d'attente dépassé. Veuillez réessayer.";
+        } else {
+          _error = "Erreur de connexion au serveur. Veuillez réessayer.";
+        }
       });
     }
   }

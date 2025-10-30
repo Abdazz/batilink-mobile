@@ -27,6 +27,8 @@ import 'screens/client/client_completed_quotations_screen.dart';
 import 'screens/client/professional_search_screen.dart';
 import 'screens/client/client_quotations_screen.dart';
 import 'screens/client/client_favorites_screen.dart';
+import 'screens/client/client_edit_profile_screen.dart';
+import 'screens/debug/network_diagnostic_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -86,6 +88,7 @@ class MyApp extends StatelessWidget {
           return ProClientQuotationsScreen(
             token: args?['token'],
             userData: args?['userData'],
+            filters: args?['filters'],
           );
         },
         '/pro-client/respond-quotations': (context) {
@@ -177,6 +180,14 @@ class MyApp extends StatelessWidget {
             userData: args?['userData'],
           );
         },
+        '/client/edit-profile': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return ClientEditProfileScreen(
+            token: args?['token'] ?? '',
+            userData: args?['userData'] ?? <String, dynamic>{},
+          );
+        },
+        '/debug/network': (context) => const NetworkDiagnosticWidget(),
       },
     );
   }

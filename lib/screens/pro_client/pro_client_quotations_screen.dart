@@ -6,11 +6,13 @@ import '../../services/pro_client_service.dart';
 class ProClientQuotationsScreen extends StatefulWidget {
   final String? token;
   final Map<String, dynamic>? userData;
+  final Map<String, dynamic>? filters;
 
   const ProClientQuotationsScreen({
     Key? key,
     this.token,
     this.userData,
+    this.filters,
   }) : super(key: key);
 
   @override
@@ -90,9 +92,15 @@ class _ProClientQuotationsScreenState extends State<ProClientQuotationsScreen> {
     });
 
     try {
+      // Récupérer les filtres passés en paramètres ou utiliser des valeurs par défaut
+      final statusFilter = widget.filters?['status']?.toString() ?? 'pending,quoted,accepted';
+      final userId = widget.filters?['user_id']?.toString();
+      
       final response = await _proClientService.getQuotations(
         accessToken: _finalToken,
         context: 'client', // Mode client
+        status: statusFilter,
+        userId: userId,
       );
 
       if (response.statusCode == 200) {
@@ -118,22 +126,35 @@ class _ProClientQuotationsScreenState extends State<ProClientQuotationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Déterminer le titre en fonction des filtres
+    final bool isMyQuotations = widget.filters?['user_id'] != null;
+    
     return Scaffold(
       appBar: AppBar(
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Mes devis reçus'),
-            const SizedBox(width: 8),
-            if (_isProClient)
+            Flexible(
+              child: Text(
+                isMyQuotations ? 'Mes demandes' : 'Devis reçus',
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 18),
+              ),
+            ),
+            if (_isProClient) ...[
+              const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: Colors.orange.shade100,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.orange, width: 1),
                 ),
+                constraints: const BoxConstraints(maxWidth: 100),
                 child: Text(
-                  'MODE PRO-CLIENT',
+                  'PRO-CLIENT',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: Colors.orange.shade800,
                     fontSize: 10,
@@ -141,6 +162,7 @@ class _ProClientQuotationsScreenState extends State<ProClientQuotationsScreen> {
                   ),
                 ),
               ),
+            ],
           ],
         ),
         backgroundColor: const Color(0xFFFFCC00),

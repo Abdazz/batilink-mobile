@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:batilink_mobile_app/core/app_config.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,6 +9,7 @@ import '../../../services/auth_service.dart';
 import 'client_dashboard_screen.dart';
 import 'professional_search_screen.dart';
 import 'client_completed_quotations_screen.dart';
+import 'client_edit_profile_screen.dart';
 
 class ClientProfileScreen extends StatefulWidget {
   final String token;
@@ -64,8 +66,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
   Future<void> _loadUserProfile() async {
     try {
-      final token = _token; // Utiliser le token récupéré depuis SharedPreferences
-      final authService = AuthService(baseUrl: 'http://10.0.2.2:8000');
+      final token = _token;
+      final authService = AuthService(baseUrl: AppConfig.baseUrl);
 
       if (token.isEmpty) {
         _showError('Token d\'authentification manquant');
@@ -77,97 +79,109 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
       print('Données utilisateur reçues lors du login: ${widget.userData}');
 
       final response = await authService.getClientProfile(accessToken: token);
+      print('=== DEBUG: Réponse complète du serveur ===');
+      print('Status: ${response.statusCode}');
+      print('Headers: ${response.headers}');
+      print('Body: ${response.body}');
+      print('======================================');
 
-      print('Réponse reçue - Status: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        print('Données décodées: $data');
-        print('Type des données: ${data.runtimeType}');
-
-        // Vérification de la structure de la réponse
-        if (data is Map<String, dynamic>) {
-          print('Clés disponibles dans la réponse: ${data.keys.toList()}');
-
-          if (data.containsKey('data')) {
-            final responseData = data['data'];
-            print('Données de réponse trouvées: $responseData');
-            print('Type des données de réponse: ${responseData.runtimeType}');
-
-            if (responseData is Map<String, dynamic>) {
-              print('Clés dans responseData: ${responseData.keys.toList()}');
-
-              // Extraire les données utilisateur depuis le champ 'user'
-              if (responseData.containsKey('user')) {
-                final userData = responseData['user'];
-                print('Données utilisateur extraites: $userData');
-                print('Type des données utilisateur: ${userData.runtimeType}');
-
-                if (userData is Map<String, dynamic>) {
-                  print('Clés utilisateur: ${userData.keys.toList()}');
-
-                  setState(() {
-                    _userData = userData;
-                    _isLoading = false;
-                  });
-
-                  print('Profil utilisateur chargé avec succès: ${_userData?['first_name']} ${_userData?['last_name']} - ${_userData?['email']}');
-
-                  // Mettre à jour les statistiques si elles sont disponibles dans responseData
-                  if (responseData.containsKey('stats')) {
-                    final stats = responseData['stats'];
-                    if (stats is Map<String, dynamic>) {
-                      setState(() {
-                        _totalJobs = stats['total_jobs'] ?? 0;
-                        _totalFavorites = stats['total_favorites'] ?? 0;
-                        _totalReviews = stats['total_reviews'] ?? 0;
-                      });
-                      print('Statistiques mises à jour: jobs=$_totalJobs, favorites=$_totalFavorites, reviews=$_totalReviews');
-                    }
-                  } else {
-                    // Si les statistiques ne sont pas dans la réponse du profil, essayer de les récupérer séparément
-                    _loadClientStats();
-                  }
-
-                  return;
-                } else {
-                  print('ERREUR: responseData["user"] n\'est pas un Map');
-                }
-              } else {
-                print('ERREUR: Clé "user" manquante dans responseData');
-              }
-            } else {
-              print('ERREUR: data["data"] n\'est pas un Map');
-            }
-          } else {
-            print('ERREUR: Clé "data" manquante dans la réponse');
-          }
-        } else {
-          print('ERREUR: Réponse n\'est pas un Map');
-        }
-
-        // Si on arrive ici, c'est qu'il y a un problème avec la structure
-        print('Problème avec la structure de la réponse API');
-        _showError('Format de réponse inattendu du serveur');
-        return;
-      } else {
+      if (response.statusCode != 200) {
         print('Échec API - Status: ${response.statusCode}');
         print('Corps de l\'erreur: ${response.body}');
-        // Afficher une erreur au lieu d'utiliser des données de test
         setState(() {
           _errorMessage = 'Erreur lors de la récupération du profil (${response.statusCode})';
           _isLoading = false;
         });
         return;
       }
+
+      try {
+        final data = json.decode(response.body);
+        print('Données décodées: $data');
+        print('Type des données: ${data.runtimeType}');
+
+        // Vérification de la structure de la réponse
+        if (data is! Map<String, dynamic>) {
+          throw FormatException('La réponse du serveur n\'est pas un objet JSON valide');
+        }
+
+        print('Clés disponibles dans la réponse: ${data.keys.toList()}');
+
+        if (!data.containsKey('data') || data['data'] is! Map) {
+          throw FormatException('Données de réponse manquantes ou invalides');
+        }
+
+        final responseData = data['data'] as Map<String, dynamic>;
+        print('Données de réponse trouvées: $responseData');
+
+        if (!responseData.containsKey('user') || responseData['user'] is! Map) {
+          throw FormatException('Données utilisateur manquantes dans la réponse');
+        }
+
+        // Extraire les données utilisateur
+        final userData = Map<String, dynamic>.from(responseData['user'] as Map);
+        print('Données utilisateur extraites: $userData');
+        
+        // Récupérer les données existantes
+        final existingData = Map<String, dynamic>.from(widget.userData);
+        final newData = Map<String, dynamic>.from(userData);
+        
+        // Log des données d'avatar pour le débogage
+        print('=== DEBUG: Données d\'avatar ===');
+        print('Avatar existant: ${existingData['avatar']}');
+        print('Nouvel avatar: ${newData['avatar']}');
+        
+        // Conserver l'avatar existant s'il n'est pas dans les nouvelles données
+        if (existingData['avatar'] != null && 
+            (newData['avatar'] == null || newData['avatar'] == 'null' || newData['avatar'].toString().isEmpty)) {
+          newData['avatar'] = existingData['avatar'];
+          print('Conservation de l\'avatar existant: ${newData['avatar']}');
+        } else if (newData['avatar'] != null && newData['avatar'].toString().isNotEmpty) {
+          print('Utilisation du nouvel avatar: ${newData['avatar']}');
+        } else {
+          print('Aucun avatar disponible');
+        }
+        
+        // Mettre à jour les statistiques si elles sont disponibles
+        if (responseData.containsKey('stats') && responseData['stats'] is Map) {
+          final stats = Map<String, dynamic>.from(responseData['stats'] as Map);
+          if (mounted) {
+            setState(() {
+              _totalJobs = stats['total_jobs'] is int ? stats['total_jobs'] : 0;
+              _totalFavorites = stats['total_favorites'] is int ? stats['total_favorites'] : 0;
+              _totalReviews = stats['total_reviews'] is int ? stats['total_reviews'] : 0;
+            });
+            print('Statistiques mises à jour: jobs=$_totalJobs, favorites=$_totalFavorites, reviews=$_totalReviews');
+          }
+        } else {
+          // Si les statistiques ne sont pas dans la réponse du profil, essayer de les récupérer séparément
+          _loadClientStats();
+        }
+
+        // Mettre à jour l'état avec les nouvelles données
+        if (mounted) {
+          setState(() {
+            _userData = newData;
+            _isLoading = false;
+          });
+        }
+      } catch (e) {
+        print('Erreur lors du traitement de la réponse: $e');
+        _showError('Erreur lors du traitement des données du profil: $e');
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      }
     } catch (e) {
       print('Exception lors du chargement du profil: $e');
-      // Afficher une erreur au lieu d'utiliser des données de test
-      setState(() {
-        _errorMessage = 'Erreur de connexion lors du chargement du profil';
-        _isLoading = false;
-      });
-      return;
+      _showError('Erreur de connexion lors du chargement du profil: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -177,7 +191,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
       if (token.isEmpty) return;
 
       final response = await http.get(
-        Uri.parse('http://10.0.2.2:8000/api/client/stats'),
+        Uri.parse('${AppConfig.baseUrl}/api/client/stats'),
         headers: {
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
@@ -261,26 +275,60 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
   }
 
   Future<void> _logout() async {
-    try {
-      // Supprimer toutes les données locales (comme dans le profil professionnel)
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear(); // Vider toutes les préférences
-
-      if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/onboarding-role',
-          (route) => false,
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Erreur lors de la déconnexion'),
-            backgroundColor: Colors.red,
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Déconnexion',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+        ),
+        content: Text(
+          'Êtes-vous sûr de vouloir vous déconnecter ?',
+          style: GoogleFonts.poppins(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              'Annuler',
+              style: GoogleFonts.poppins(),
+            ),
           ),
-        );
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              'Déconnexion',
+              style: GoogleFonts.poppins(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        // Supprimer toutes les données locales
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.clear();
+
+        // Rediriger vers l'écran de sélection de rôle
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/onboarding-role',
+            (route) => false,
+          );
+        }
+      } catch (e) {
+        print('Erreur lors de la déconnexion: $e');
+        // En cas d'erreur, rediriger quand même vers l'écran de connexion
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/onboarding-role',
+            (route) => false,
+          );
+        }
       }
     }
   }
@@ -458,20 +506,11 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                       width: 2,
                     ),
                   ),
-                  child: _userData?['avatar'] != null
+                  child: _userData?['avatar'] != null && _userData!['avatar'].toString().isNotEmpty
                       ? ClipOval(
-                          child: CachedNetworkImage(
-                            imageUrl: _userData!['avatar'],
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => const CircularProgressIndicator(),
-                            errorWidget: (context, url, error) => const Icon(
-                              Icons.person,
-                              color: Color(0xFFFFCC00),
-                              size: 30,
-                            ),
-                          ),
-                        )
-                      : const Icon(
+                          child: _buildAvatarImage(_userData!),
+                          )
+                        : const Icon(
                           Icons.person,
                           color: Color(0xFFFFCC00),
                           size: 30,
@@ -521,6 +560,94 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
               _buildInfoRow('Membre depuis', _formatDate(_userData!['created_at'])),
             ],
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatarImage(Map<String, dynamic> userData) {
+    String? avatarUrl = userData['avatar']?.toString() ?? userData['profile_photo_url']?.toString();
+    
+    // Si pas d'URL d'avatar, on affiche l'avatar par défaut
+    if (avatarUrl == null || avatarUrl.isEmpty) {
+      return _buildDefaultAvatar(userData);
+    }
+
+    // Corriger l'URL si elle utilise localhost
+    avatarUrl = AppConfig.fixAvatarUrl(avatarUrl);
+
+    // Ajouter un paramètre de cache busting si ce n'est pas déjà fait
+    if (!avatarUrl.contains('?t=')) {
+      avatarUrl = '$avatarUrl${avatarUrl.contains('?') ? '&' : '?'}t=${DateTime.now().millisecondsSinceEpoch}';
+    }
+
+    // Récupérer les initiales pour le fallback
+    final firstName = userData['first_name']?.toString() ?? '';
+    final lastName = userData['last_name']?.toString() ?? '';
+    final initials = '${firstName.isNotEmpty ? firstName[0] : ''}${lastName.isNotEmpty ? lastName[0] : ''}';
+    
+    print('Chargement de l\'avatar depuis: $avatarUrl');
+    
+    // Utiliser CachedNetworkImage pour une meilleure gestion du cache et du chargement
+    return ClipOval(
+      child: CachedNetworkImage(
+        imageUrl: avatarUrl,
+        width: 100,
+        height: 100,
+        fit: BoxFit.cover,
+        placeholder: (context, url) => _buildDefaultAvatar(userData),
+        errorWidget: (context, url, error) {
+          print('Erreur de chargement de l\'avatar: $error');
+          print('URL de l\'avatar: $url');
+          // Si l'URL contient localhost, essayer de la corriger et de recharger
+          if (url.contains('localhost')) {
+            final fixedUrl = AppConfig.fixAvatarUrl(url);
+            if (fixedUrl != url) {
+              print('Tentative de rechargement avec l\'URL corrigée: $fixedUrl');
+              return CachedNetworkImage(
+                imageUrl: fixedUrl,
+                width: 100,
+                height: 100,
+                fit: BoxFit.cover,
+                placeholder: (context, _) => _buildDefaultAvatar(userData),
+                errorWidget: (context, _, __) => _buildDefaultAvatar(userData),
+              );
+            }
+          }
+          return _buildDefaultAvatar(userData);
+        },
+        httpHeaders: const {
+          'Accept': 'image/*',
+        },
+        memCacheWidth: 200,
+        memCacheHeight: 200,
+        maxHeightDiskCache: 200,
+        maxWidthDiskCache: 200,
+      ),
+    );
+  }
+
+  Widget _buildDefaultAvatar(Map<String, dynamic> userData) {
+    final firstName = userData['first_name']?.toString() ?? '';
+    final lastName = userData['last_name']?.toString() ?? '';
+    final initials = '${firstName.isNotEmpty ? firstName[0] : ''}${lastName.isNotEmpty ? lastName[0] : ''}'
+        .toUpperCase();
+    
+    return Container(
+      width: 100,
+      height: 100,
+      decoration: BoxDecoration(
+        color: const Color(0xFF7F9CF5).withOpacity(0.2),
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Text(
+          initials.isNotEmpty ? initials : 'U',
+          style: const TextStyle(
+            color: Color(0xFF4F46E5),
+            fontSize: 30,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
     );
@@ -588,15 +715,28 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
           icon: Icons.settings,
           title: 'Paramètres du profil',
           subtitle: 'Modifier vos informations personnelles',
-          onTap: () => Navigator.pushNamed(
-            context,
-            '/client/profile/edit',
-            arguments: {
-              'token': widget.token,
-              'userData': widget.userData,
-            },
-          ),
+          onTap: () async {
+            final updatedUserData = await Navigator.push<Map<String, dynamic>>(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ClientEditProfileScreen(
+                  token: widget.token,
+                  userData: Map<String, dynamic>.from(widget.userData),
+                ),
+              ),
+            );
+            
+            // Mettre à jour les données utilisateur si des modifications ont été apportées
+            if (updatedUserData != null && mounted) {
+              setState(() {
+                _userData = updatedUserData;
+              });
+              // Forcer le rechargement du profil pour s'assurer que tout est à jour
+              _loadUserProfile();
+            }
+          },
         ),
+        const SizedBox(height: 8),
       ],
     );
   }
@@ -728,4 +868,5 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
       return 'N/A';
     }
   }
+
 }

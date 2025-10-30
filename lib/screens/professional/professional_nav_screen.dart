@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'professional_complete_profile_screen.dart';
 import 'professional_dashboard_screen.dart';
 import 'professional_settings_screen.dart';
+import 'professional_clients_screen.dart';
 import 'quotations_screen.dart';
 
 class ProfessionalNavScreen extends StatefulWidget {
@@ -21,7 +21,7 @@ class _ProfessionalNavScreenState extends State<ProfessionalNavScreen> {
   Widget build(BuildContext context) {
     final pages = [
       _DashboardTab(token: widget.token, profile: widget.profile),
-      const _ClientsTab(),
+      _ClientsTab(token: widget.token),
       _QuotationsTab(token: widget.token),
       _SettingsTab(token: widget.token),
     ];
@@ -68,10 +68,12 @@ class _DashboardTab extends StatelessWidget {
 }
 
 class _ClientsTab extends StatelessWidget {
-  const _ClientsTab();
+  final String token;
+  const _ClientsTab({required this.token});
+  
   @override
   Widget build(BuildContext context) {
-    return const Center(child: Text('Mes clients'));
+    return ProfessionalClientsScreen(token: token);
   }
 }
 

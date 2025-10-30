@@ -1017,3 +1017,4 @@ class _AddPortfolioDialogState extends State<AddPortfolioDialog> {
     );
   }
 }
+

@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../core/app_config.dart';
 
 class AuthService {
   final String baseUrl;
@@ -16,32 +19,146 @@ class AuthService {
     return url;
   }
 
+  // Configuration intelligente - essaie le nom de domaine, bascule sur IP si DNS échoue
+  bool _useDirectIPFallback = false;
+
+  // Test de connectivité avec diagnostic intelligent
+  static Future<String> diagnoseConnection() async {
+    print('🔍 DIAGNOSTIC DE CONNEXION...');
+
+    // Test 1: Vérifier la connectivité Internet de base
+    try {
+      final testUrl = Uri.parse('https://www.google.com');
+      await http.get(testUrl).timeout(const Duration(seconds: 5));
+      print('✅ Connectivité Internet OK');
+    } catch (e) {
+      print('❌ Pas de connectivité Internet: $e');
+      return 'PAS_DE_CONNEXION_INTERNET';
+    }
+
+    // Test 2: Tester le nom de domaine principal
+    try {
+      final domainUrl = Uri.parse('${AppConfig.baseUrl}/api/health');
+      final response = await http.get(domainUrl).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        print('✅ Nom de domaine accessible: ${AppConfig.baseUrl}');
+        return 'DOMAINE_OK';
+      }
+    } catch (e) {
+      print('❌ Problème avec le nom de domaine: $e');
+
+      // Test 3: Si c'est une erreur de sécurité réseau, tester l'IP directe
+      if (e.toString().contains('Operation not permitted') ||
+          e.toString().contains('errno = 1') ||
+          e.toString().contains('Failed host lookup')) {
+
+        try {
+          final ipUrl = Uri.parse('https://${AppConfig.directIP}/api/health');
+          final response = await http.get(ipUrl).timeout(const Duration(seconds: 10));
+          if (response.statusCode == 200) {
+            print('✅ IP directe accessible: ${AppConfig.directIP}');
+            return 'IP_DIRECTE_OK';
+          }
+        } catch (ipError) {
+          print('❌ IP directe aussi inaccessible: $ipError');
+          return 'IP_DIRECTE_ECHEC';
+        }
+      }
+    }
+
+    return 'ERREUR_INCONNUE';
+  }
+
+  // URL intelligente qui bascule automatiquement
+  String get _smartBaseUrl {
+    if (_useDirectIPFallback) {
+      return AppConfig.useDirectIP
+          ? 'https://${AppConfig.directIP}'
+          : AppConfig.baseUrl;
+    }
+    return AppConfig.baseUrl;
+  }
+
+  // Client HTTP intelligent
+  http.Client get _smartHttpClient {
+    if (_useDirectIPFallback && AppConfig.ignoreSSLCertificate) {
+      final ioClient = HttpClient()
+        ..badCertificateCallback = (cert, host, port) => true;
+      return IOClient(ioClient);
+    }
+    return http.Client();
+  }
+
   Future<http.Response> loginWithDevice({
     required String email,
     required String password,
     String deviceName = 'batilink-mobile',
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/login');
-    final response = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode({
-        'email': email,
-        'password': password,
-        'device_name': deviceName,
-      }),
-    );
+    try {
+      final url = Uri.parse('${_smartBaseUrl}/api/login');
+      final response = await _smartHttpClient.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'email': email,
+          'password': password,
+          'device_name': deviceName,
+        }),
+      ).timeout(const Duration(seconds: 30));
 
-    // Débogage pour voir la réponse brute
-    print('=== DEBUG LOGIN RESPONSE ===');
-    print('Status: ${response.statusCode}');
-    print('Body: ${response.body}');
-    print('Headers: ${response.headers}');
+      // Débogage pour voir la réponse brute
+      print('=== DEBUG LOGIN RESPONSE ===');
+      print('Status: ${response.statusCode}');
+      print('Body: ${response.body}');
+      print('Headers: ${response.headers}');
 
-    return response;
+      return response;
+
+    } catch (e) {
+      print('Erreur lors de la connexion device: $e');
+
+      // Si c'est une erreur DNS et qu'on n'utilise pas encore l'IP, bascule automatiquement
+      if ((e.toString().contains('Failed host lookup') ||
+           e.toString().contains('No address') ||
+           e.toString().contains('Operation not permitted')) &&
+          !_useDirectIPFallback) {
+
+        print('🔄 BASCULE AUTOMATIQUE: Tentative de connexion device avec l\'IP directe...');
+        _useDirectIPFallback = true;
+
+        try {
+          final ipUrl = 'https://${AppConfig.directIP}/api/login';
+          print('Tentative de connexion device avec IP directe: $ipUrl');
+
+          final url = Uri.parse(ipUrl);
+          final response = await _smartHttpClient.post(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({
+              'email': email,
+              'password': password,
+              'device_name': deviceName,
+            }),
+          ).timeout(const Duration(seconds: 30));
+
+          print('✅ Réponse de connexion device via IP (${response.statusCode})');
+          return response;
+
+        } catch (ipError) {
+          print('❌ Échec de connexion device aussi avec l\'IP directe: $ipError');
+          _useDirectIPFallback = false;
+          rethrow;
+        }
+      }
+
+      rethrow;
+    }
   }
   Future<http.Response> registerProfessional({
     required String firstName,
@@ -51,8 +168,8 @@ class AuthService {
     required String password,
     required String passwordConfirmation,
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/register');
-    final response = await http.post(
+    final url = Uri.parse('${_smartBaseUrl}/api/register');
+    final response = await _smartHttpClient.post(
       url,
       headers: {
         'Content-Type': 'application/json',
@@ -67,7 +184,7 @@ class AuthService {
         'password_confirmation': passwordConfirmation,
         'role': 'professional',
       }),
-    );
+    ).timeout(const Duration(seconds: 30));
     return response;
   }
 
@@ -76,43 +193,102 @@ class AuthService {
     required String password,
     String deviceName = 'batilink-mobile',
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/login');
-    print('Tentative de connexion à: $url');
-    print('Email: $email');
-    print('Device: $deviceName');
+    try {
+      // Essaie d'abord le nom de domaine (solution sécurisée)
+      final url = Uri.parse('${_smartBaseUrl}/api/login');
+      print('Tentative de connexion à: $url');
+      print('Email: $email');
+      print('Device: $deviceName');
 
-    final response = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode({
-        'email': email,
-        'password': password,
-        'device_name': deviceName,
-      }),
-    );
+      final response = await _smartHttpClient.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'email': email,
+          'password': password,
+          'device_name': deviceName,
+        }),
+      ).timeout(const Duration(seconds: 30));
 
-    print('Réponse de connexion: ${response.statusCode}');
-    print('Corps de la réponse: ${response.body}');
-    return response;
+      print('Réponse de connexion: ${response.statusCode}');
+      print('Corps de la réponse: ${response.body}');
+      return response;
+
+    } catch (e) {
+      print('Erreur lors de la connexion: $e');
+
+      // Diagnostic intelligent avant de basculer
+      final diagnosis = await diagnoseConnection();
+
+      if (diagnosis == 'IP_DIRECTE_OK' && !_useDirectIPFallback) {
+        print('🔄 BASCULE AUTOMATIQUE: Tentative de connexion avec l\'IP directe...');
+        _useDirectIPFallback = true;
+
+        try {
+          // Réessaie avec l'IP directe
+          final ipUrl = 'https://${AppConfig.directIP}/api/login';
+          print('Tentative de connexion avec IP directe: $ipUrl');
+
+          final url = Uri.parse(ipUrl);
+          final response = await _smartHttpClient.post(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({
+              'email': email,
+              'password': password,
+              'device_name': deviceName,
+            }),
+          ).timeout(const Duration(seconds: 30));
+
+          print('✅ Réponse de connexion via IP (${response.statusCode}): ${response.body}');
+          return response;
+
+        } catch (ipError) {
+          print('❌ Échec de connexion aussi avec l\'IP directe: $ipError');
+          _useDirectIPFallback = false; // Reset pour les prochaines tentatives
+        }
+      }
+
+      // Messages d'erreur spécifiques selon le diagnostic
+      if (diagnosis == 'PAS_DE_CONNEXION_INTERNET') {
+        print('ERREUR: Aucune connexion Internet détectée');
+        print('Solution: Vérifiez votre connexion WiFi ou mobile');
+      } else if (diagnosis == 'IP_DIRECTE_ECHEC') {
+        print('ERREUR: Serveur inaccessible');
+        print('Le serveur ${AppConfig.directIP} ne répond pas');
+      } else if (e.toString().contains('Operation not permitted') || e.toString().contains('errno = 1')) {
+        print('ERREUR SECURITE RESEAU: L\'appareil bloque la connexion HTTPS');
+        print('Solutions recommandées:');
+        print('- Changez de réseau WiFi (certains réseaux d\'entreprise bloquent HTTPS)');
+        print('- Utilisez un réseau mobile (4G/5G) au lieu du WiFi');
+        print('- Activez un VPN pour contourner les restrictions');
+        print('- Redémarrez votre application après avoir changé de réseau');
+      }
+
+      rethrow;
+    }
   }
 
   Future<http.Response> getProfessionalProfile({
     required String accessToken,
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/professional/profile/me');
+    final url = Uri.parse('${_smartBaseUrl}/api/professional/profile/me');
     print('=== DEBUG - Récupération profil professionnel ===');
     print('URL: $url');
 
-    final response = await http.get(
+    final response = await _smartHttpClient.get(
       url,
       headers: {
         'Accept': 'application/json',
         'Authorization': 'Bearer $accessToken',
       },
-    );
+    ).timeout(const Duration(seconds: 30));
 
     print('Réponse profil: ${response.statusCode}');
     print('Corps réponse profil: ${response.body}');
@@ -122,17 +298,17 @@ class AuthService {
   Future<http.Response> getCurrentUser({
     required String accessToken,
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/user');
+    final url = Uri.parse('${_smartBaseUrl}/api/user');
     print('=== DEBUG - Récupération utilisateur actuel ===');
     print('URL: $url');
 
-    final response = await http.get(
+    final response = await _smartHttpClient.get(
       url,
       headers: {
         'Accept': 'application/json',
         'Authorization': 'Bearer $accessToken',
       },
-    );
+    ).timeout(const Duration(seconds: 30));
 
     print('Réponse user: ${response.statusCode}');
     print('Corps réponse user: ${response.body}');
@@ -142,17 +318,17 @@ class AuthService {
   Future<http.Response> getClientProfile({
     required String accessToken,
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/client/profile');
+    final url = Uri.parse('${_smartBaseUrl}/api/client/profile');
     print('=== DEBUG - Récupération profil client ===');
     print('URL: $url');
 
-    final response = await http.get(
+    final response = await _smartHttpClient.get(
       url,
       headers: {
         'Accept': 'application/json',
         'Authorization': 'Bearer $accessToken',
       },
-    );
+    ).timeout(const Duration(seconds: 30));
 
     print('Réponse profil client: ${response.statusCode}');
     print('Corps réponse profil client: ${response.body}');
@@ -163,8 +339,8 @@ class AuthService {
     required String accessToken,
     required Map<String, dynamic> payload,
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/professional/profile/complete');
-    final response = await http.post(
+    final url = Uri.parse('${_smartBaseUrl}/api/professional/profile/complete');
+    final response = await _smartHttpClient.post(
       url,
       headers: {
         'Content-Type': 'application/json',
@@ -172,7 +348,7 @@ class AuthService {
         'Authorization': 'Bearer $accessToken',
       },
       body: jsonEncode(payload),
-    );
+    ).timeout(const Duration(seconds: 30));
     return response;
   }
 
@@ -180,8 +356,8 @@ class AuthService {
     required String accessToken,
     required String businessHoursJson,
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/professional/profile/update-hours');
-    final response = await http.put(
+    final url = Uri.parse('${_smartBaseUrl}/api/professional/profile/update-hours');
+    final response = await _smartHttpClient.put(
       url,
       headers: {
         'Content-Type': 'application/json',
@@ -191,24 +367,24 @@ class AuthService {
       body: jsonEncode({
         'business_hours': businessHoursJson,
       }),
-    );
+    ).timeout(const Duration(seconds: 30));
     return response;
   }
 
   Future<http.Response> getProClientProfile({
     required String accessToken,
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/pro-client/profile/me');
+    final url = Uri.parse('${_smartBaseUrl}/api/pro-client/profile/me');
     print('=== DEBUG - Récupération profil pro-client ===');
     print('URL: $url');
 
-    final response = await http.get(
+    final response = await _smartHttpClient.get(
       url,
       headers: {
         'Accept': 'application/json',
         'Authorization': 'Bearer $accessToken',
       },
-    );
+    ).timeout(const Duration(seconds: 30));
 
     print('Réponse profil pro-client: ${response.statusCode}');
     print('Corps réponse profil pro-client: ${response.body}');
@@ -219,8 +395,8 @@ class AuthService {
     required String accessToken,
     required Map<String, dynamic> payload,
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/pro-client/profile/complete');
-    final response = await http.post(
+    final url = Uri.parse('${_smartBaseUrl}/api/pro-client/profile/complete');
+    final response = await _smartHttpClient.post(
       url,
       headers: {
         'Content-Type': 'application/json',
@@ -228,7 +404,7 @@ class AuthService {
         'Authorization': 'Bearer $accessToken',
       },
       body: jsonEncode(payload),
-    );
+    ).timeout(const Duration(seconds: 30));
     return response;
   }
 
@@ -238,8 +414,8 @@ class AuthService {
     String? profileId,
   }) async {
     final url = profileId != null && profileId.isNotEmpty
-        ? '${effectiveBaseUrl}/api/pro-client/profile/$profileId'
-        : '${effectiveBaseUrl}/api/pro-client/profile';
+        ? '${_smartBaseUrl}/api/pro-client/profile/$profileId'
+        : '${_smartBaseUrl}/api/pro-client/profile';
 
     print('=== DEBUG UPDATE PRO-CLIENT PROFILE ===');
     print('URL: $url');
@@ -247,7 +423,7 @@ class AuthService {
     print('Payload: $payload');
     print('===========================');
 
-    final response = await http.put(
+    final response = await _smartHttpClient.put(
       Uri.parse(url),
       headers: {
         'Content-Type': 'application/json',
@@ -255,7 +431,7 @@ class AuthService {
         'Authorization': 'Bearer $accessToken',
       },
       body: jsonEncode(payload),
-    );
+    ).timeout(const Duration(seconds: 30));
 
     print('Réponse update profil pro-client: ${response.statusCode}');
     print('Corps réponse: ${response.body}');
@@ -268,7 +444,7 @@ class AuthService {
     required String type, // ex: 'id', 'kbis', 'professional_license', 'insurance_certificate', 'bank'
     String? name,
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/professional/documents');
+    final url = Uri.parse('${_smartBaseUrl}/api/professional/documents');
     final request = http.MultipartRequest('POST', url);
     request.headers.addAll({
       'Accept': 'application/json',
@@ -293,9 +469,10 @@ class AuthService {
     required String role,
   }) async {
     try {
-      final fullUrl = '${effectiveBaseUrl}/api/register';
+      // Essaie d'abord le nom de domaine (solution sécurisée)
+      final fullUrl = '${_smartBaseUrl}/api/register';
       print('Tentative d\'inscription vers: $fullUrl');
-      
+
       final url = Uri.parse(fullUrl);
       final body = {
         'first_name': firstName,
@@ -306,38 +483,96 @@ class AuthService {
         'password_confirmation': passwordConfirmation,
         'role': role,
       };
-      
+
       print('Corps de la requête: $body');
-      
-      final response = await http.post(
+
+      final response = await _smartHttpClient.post(
         url,
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
         body: jsonEncode(body),
-      );
-      
+      ).timeout(const Duration(seconds: 30));
+
       print('Réponse du serveur (${response.statusCode}): ${response.body}');
-      
       return response;
+
     } catch (e) {
       print('Erreur lors de l\'inscription: $e');
+
+      // Diagnostic intelligent avant de basculer
+      final diagnosis = await diagnoseConnection();
+
+      if (diagnosis == 'IP_DIRECTE_OK' && !_useDirectIPFallback) {
+        print('🔄 BASCULE AUTOMATIQUE: Utilisation de l\'IP directe...');
+        _useDirectIPFallback = true;
+
+        try {
+          // Réessaie avec l'IP directe
+          final ipUrl = 'https://${AppConfig.directIP}/api/register';
+          print('Tentative avec IP directe: $ipUrl');
+
+          final url = Uri.parse(ipUrl);
+          final body = {
+            'first_name': firstName,
+            'last_name': lastName,
+            'email': email,
+            'phone': phone,
+            'password': password,
+            'password_confirmation': passwordConfirmation,
+            'role': role,
+          };
+
+          final response = await _smartHttpClient.post(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode(body),
+          ).timeout(const Duration(seconds: 30));
+
+          print('✅ Réponse du serveur via IP (${response.statusCode}): ${response.body}');
+          return response;
+
+        } catch (ipError) {
+          print('❌ Échec aussi avec l\'IP directe: $ipError');
+          _useDirectIPFallback = false; // Reset pour les prochaines tentatives
+        }
+      }
+
+      // Messages d'erreur spécifiques selon le diagnostic
+      if (diagnosis == 'PAS_DE_CONNEXION_INTERNET') {
+        print('ERREUR: Aucune connexion Internet détectée');
+        print('Solution: Vérifiez votre connexion WiFi ou mobile');
+      } else if (diagnosis == 'IP_DIRECTE_ECHEC') {
+        print('ERREUR: Serveur inaccessible');
+        print('Le serveur ${AppConfig.directIP} ne répond pas');
+      } else if (e.toString().contains('Operation not permitted') || e.toString().contains('errno = 1')) {
+        print('ERREUR SECURITE RESEAU: L\'appareil bloque la connexion HTTPS');
+        print('Solutions recommandées:');
+        print('- Changez de réseau WiFi (certains réseaux d\'entreprise bloquent HTTPS)');
+        print('- Utilisez un réseau mobile (4G/5G) au lieu du WiFi');
+        print('- Activez un VPN pour contourner les restrictions');
+        print('- Redémarrez votre application après avoir changé de réseau');
+      }
+
       rethrow;
     }
   }
 
   Future<bool> logout(String token) async {
     try {
-      final url = Uri.parse('${effectiveBaseUrl}/api/logout');
-      final response = await http.post(
+      final url = Uri.parse('${_smartBaseUrl}/api/logout');
+      final response = await _smartHttpClient.post(
         url,
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
         },
-      );
+      ).timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         // Supprimer le token du stockage local

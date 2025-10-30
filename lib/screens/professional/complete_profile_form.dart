@@ -5,6 +5,10 @@ import 'package:form_field_validator/form_field_validator.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
+import 'package:path/path.dart' as path;
+import 'package:mime/mime.dart';
+import 'package:http_parser/http_parser.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/app_config.dart';
 
 class CompleteProfileForm extends StatefulWidget {
@@ -314,6 +318,24 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
     return jsonEncode(_businessHours);
   }
 
+  // Méthode pour obtenir le type MIME d'un fichier à partir de son extension
+  String _getMimeType(String filePath) {
+    final extension = path.extension(filePath).toLowerCase();
+    switch (extension) {
+      case '.jpg':
+      case '.jpeg':
+        return 'image/jpeg';
+      case '.png':
+        return 'image/png';
+      case '.gif':
+        return 'image/gif';
+      default:
+        // Utiliser le package mime pour détecter le type à partir du contenu si nécessaire
+        final mimeType = lookupMimeType(filePath);
+        return mimeType ?? 'application/octet-stream';
+    }
+  }
+
   // Désactivez cette constante pour utiliser l'upload de document personnalisé
   static const bool USE_DEFAULT_DOCUMENT = true;
   static const String DEFAULT_DOCUMENT_PATH = 'chemin/vers/document_par_defaut.pdf';
@@ -326,31 +348,8 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
     try {
       setState(() => _isUploading = true);
 
-      Map<String, String> uploadedFiles = {};
-
-      // Utilisation d'un document par défaut si activé
-      if (USE_DEFAULT_DOCUMENT) {
-        uploadedFiles['id_document_path'] = DEFAULT_DOCUMENT_PATH;
-        print('Utilisation du document par défaut: $DEFAULT_DOCUMENT_PATH');
-      }
-      // Sinon, upload du document personnalisé s'il est sélectionné
-      else if (_idDocumentPath != null) {
-        try {
-          final docUpload = await _uploadDocument();
-          uploadedFiles.addAll(docUpload);
-          print('Document uploadé avec succès');
-        } catch (e) {
-          print('Erreur lors de l\'upload du document: $e');
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Erreur lors de l\'upload du document: $e')),
-            );
-          }
-          return;
-        }
-      }
-
-      final Map<String, dynamic> formData = {
+      // Préparer les données du formulaire
+      final formData = {
         'company_name': _companyNameCtrl.text.trim(),
         'rccm_number': _rccmNumberCtrl.text.trim(),
         'job_title': _jobTitleCtrl.text.trim(),
@@ -368,33 +367,78 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
         'skills': _skills,
         'business_hours': _getBusinessHoursJson(),
         'profile_completed': true,
-        ...uploadedFiles,
+        'id_document_path': USE_DEFAULT_DOCUMENT 
+            ? DEFAULT_DOCUMENT_PATH 
+            : _idDocumentPath,
       };
 
-      // Ajouter la photo de profil en base64 si elle existe
+      // Ajouter l'image en base64 si elle existe
       if (_profilePhotoPath != null) {
         try {
-          final File imageFile = File(_profilePhotoPath!);
-          final imageBytes = await imageFile.readAsBytes();
-          final base64Image = base64Encode(imageBytes);
-          formData['profile_photo'] = 'data:image/jpeg;base64,$base64Image';
-        } catch (e) {
-          print('Erreur lors de la conversion de l\'image en base64: $e');
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Erreur lors du traitement de la photo: $e')),
-            );
+          final file = File(_profilePhotoPath!);
+          final fileSize = await file.length();
+          
+          // Vérifier la taille du fichier (max 5MB)
+          if (fileSize > 5 * 1024 * 1024) {
+            throw Exception('La taille de l\'image ne doit pas dépasser 5MB');
           }
+          
+          final bytes = await file.readAsBytes();
+          final mimeType = _getMimeType(_profilePhotoPath!);
+          final base64Image = base64Encode(bytes);
+          
+          // Ajouter l'image en base64 aux données du formulaire
+          formData['profile_photo_base64'] = 'data:$mimeType;base64,$base64Image';
+          
+          print('Image encodée en base64 (${(fileSize / 1024).toStringAsFixed(2)} KB)');
+        } catch (e) {
+          print('Erreur lors du traitement de l\'image: $e');
+          rethrow;
         }
       }
 
-      print('Données du formulaire: $formData');
-      widget.onSubmit(formData);
+      // Préparer l'en-tête de la requête
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
+
+      // Ajouter le token d'authentification
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token != null) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+
+      print('Envoi de la requête...');
+      print('URL: ${AppConfig.baseUrl}/api/professional/profile/complete');
+      
+      final response = await http.post(
+        Uri.parse('${AppConfig.baseUrl}/api/professional/profile/complete'),
+        headers: headers,
+        body: jsonEncode(formData),
+      );
+      
+      print('Réponse du serveur (${response.statusCode}): ${response.body}');
+      
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = jsonDecode(response.body);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Profil mis à jour avec succès')),
+          );
+          Navigator.of(context).pop(true);
+        }
+      } else {
+        final error = jsonDecode(response.body);
+        throw Exception(error['message'] ?? 'Erreur lors de la mise à jour du profil');
+      }
 
     } catch (e) {
+      print('Erreur lors de l\'envoi du formulaire: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur lors de l\'envoi du formulaire: $e')),
+          SnackBar(content: Text('Erreur: ${e.toString()}')),
         );
       }
     } finally {

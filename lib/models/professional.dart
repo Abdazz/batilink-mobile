@@ -31,6 +31,7 @@ class Professional {
   final int radiusKm;
   final int completedJobs;
   final List<ProfessionalSkill> detailedSkills;
+  final Map<String, dynamic>? businessHours;
 
   Professional({
     required this.id,
@@ -60,6 +61,7 @@ class Professional {
     this.radiusKm = 0,
     this.completedJobs = 0,
     List<ProfessionalSkill>? detailedSkills,
+    this.businessHours,
   })  : skills = skills ?? [],
         portfolios = portfolios ?? [],
         reviews = reviews ?? [],
@@ -91,12 +93,16 @@ class Professional {
       return avatarUrl;
     }
 
-    // Si c'est un chemin relatif, construire l'URL complète Laravel
-    if (avatarUrl!.startsWith('/storage/') || avatarUrl!.startsWith('storage/')) {
-      // Utiliser AppConfig pour construire l'URL des médias
-      final fullUrl = AppConfig.buildMediaUrl(avatarUrl!.startsWith('/') ? avatarUrl! : '/$avatarUrl');
-      print('Chemin relatif converti en URL complète: $fullUrl');
-      return fullUrl;
+    // Si c'est un chemin relatif avec double /storage, corrige
+    String url = avatarUrl!;
+    if (url.startsWith('/storage/') || url.startsWith('storage/')) {
+      final raw = url.startsWith('/') ? url : '/$url';
+      String out = AppConfig.buildMediaUrl(raw);
+      // Correction : enlève tous doublons /storage/
+      while (out.contains('/storage/storage/')) {
+        out = out.replaceAll('/storage/storage/', '/storage/');
+      }
+      return out;
     }
 
     // Si c'est juste un nom de fichier ou un placeholder, retourner null
@@ -116,7 +122,7 @@ class Professional {
   }
 
   factory Professional.fromJson(Map<String, dynamic> json) {
-    final professional = Professional(
+    return Professional(
       id: json['id']?.toString() ?? '',
       firstName: json['first_name'] ?? json['user']?['first_name'] ?? '',
       lastName: json['last_name'] ?? json['user']?['last_name'] ?? '',
@@ -155,16 +161,8 @@ class Professional {
           ? (json['skills'] as List<dynamic>).map((skill) =>
               ProfessionalSkill.fromJson(skill as Map<String, dynamic>)).toList()
           : [],
+      businessHours: (json['business_hours'] as Map?)?.cast<String, dynamic>(),
     );
-
-    // Debug: Afficher l'URL finale de l'avatar pour chaque professionnel créé
-    print('=== DEBUG PROFESSIONNEL CREE ===');
-    print('ID: ${professional.id}');
-    print('Nom: ${professional.displayName}');
-    print('avatarUrl extrait: ${professional.avatarUrl}');
-    print('fullAvatarUrl: ${professional.fullAvatarUrl}');
-
-    return professional;
   }
 
   // Méthode helper pour extraire l'URL de la photo de profil depuis la nouvelle structure
@@ -197,7 +195,7 @@ class Professional {
   }
 
   Map<String, dynamic> toJson() {
-    return {
+    final data = {
       'id': id,
       'first_name': firstName,
       'last_name': lastName,
@@ -226,6 +224,10 @@ class Professional {
       'completed_jobs': completedJobs,
       'detailed_skills': detailedSkills.map((skill) => skill.toJson()).toList(),
     };
+    if (businessHours != null) {
+      data['business_hours'] = businessHours;
+    }
+    return data;
   }
 
   Professional copyWith({
@@ -256,6 +258,7 @@ class Professional {
     int? radiusKm,
     int? completedJobs,
     List<ProfessionalSkill>? detailedSkills,
+    Map<String, dynamic>? businessHours,
   }) {
     return Professional(
       id: id ?? this.id,
@@ -275,7 +278,7 @@ class Professional {
       skills: skills ?? this.skills,
       portfolios: portfolios ?? this.portfolios,
       reviews: reviews ?? this.reviews,
-      companyName: companyName ?? this._companyName,
+      companyName: companyName ?? _companyName,
       jobTitle: jobTitle ?? this.jobTitle,
       experienceYears: experienceYears ?? this.experienceYears,
       hourlyRate: hourlyRate ?? this.hourlyRate,
@@ -285,6 +288,7 @@ class Professional {
       radiusKm: radiusKm ?? this.radiusKm,
       completedJobs: completedJobs ?? this.completedJobs,
       detailedSkills: detailedSkills ?? this.detailedSkills,
+      businessHours: businessHours ?? this.businessHours,
     );
   }
 }

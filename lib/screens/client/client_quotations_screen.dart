@@ -34,6 +34,15 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeData();
+    });
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Recharger les devis si les arguments de route changent
     _initializeData();
   }
 
@@ -122,10 +131,38 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
     _loadQuotations();
   }
 
+  // Méthode pour obtenir l'ID de l'utilisateur connecté
+  String? _getCurrentUserId() {
+    if (widget.userData == null) return null;
+    
+    // Vérifier si l'ID est directement dans userData
+    if (widget.userData!['id'] != null) {
+      return widget.userData!['id'].toString();
+    }
+    
+    // Vérifier la structure imbriquée data.user.id
+    if (widget.userData!['data'] != null && 
+        widget.userData!['data'] is Map &&
+        widget.userData!['data']['user'] != null && 
+        widget.userData!['data']['user'] is Map &&
+        widget.userData!['data']['user']['id'] != null) {
+      return widget.userData!['data']['user']['id'].toString();
+    }
+    
+    // Vérifier la structure imbriquée user.id
+    if (widget.userData!['user'] != null && 
+        widget.userData!['user'] is Map &&
+        widget.userData!['user']['id'] != null) {
+      return widget.userData!['user']['id'].toString();
+    }
+    
+    return null;
+  }
+
   Future<void> _loadQuotations() async {
     try {
-      // Utiliser le token récupéré depuis SharedPreferences comme secours
       final token = _token;
+      final userId = _getCurrentUserId();
 
       if (token.isEmpty) {
         setState(() {
@@ -135,21 +172,57 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
         return;
       }
 
+      if (userId == null) {
+        setState(() {
+          _errorMessage = 'Impossible d\'identifier l\'utilisateur';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Construire l'URL avec les paramètres de requête
+      final params = <String, dynamic>{
+        'context': 'client',
+        // Le backend gère automatiquement le filtrage par utilisateur
+      };
+      
+      // Ajouter le filtre de statut si différent de 'all'
+      if (_statusFilter != 'all') {
+        params['status'] = _statusFilter;
+      }
+
+      final uri = Uri.parse('${AppConfig.baseUrl}/api/quotations').replace(
+        queryParameters: params,
+      );
+
+      print('Chargement des devis avec les paramètres: $params');
+      
       final response = await http.get(
-        Uri.parse('${AppConfig.baseUrl}/api/quotations'),
+        uri,
         headers: {
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
         },
       );
+      
+      print('Réponse du serveur: ${response.statusCode}');
+      print('Corps de la réponse: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        
+        // Le backend gère déjà le filtrage par utilisateur
+        // Nous faisons confiance à la réponse du serveur
+        final filteredQuotations = (data['data'] is List) ? List<dynamic>.from(data['data']) : [];
+        print('Nombre de devis reçus: ${filteredQuotations.length}');
+        
         setState(() {
-          _quotations = data['data'] ?? [];
+          _quotations = filteredQuotations;
           _isLoading = false;
           _errorMessage = null;
         });
+        
+        print('Devis filtrés: ${filteredQuotations.length} sur ${data['data']?.length ?? 0}');
       } else {
         setState(() {
           _errorMessage = 'Erreur lors du chargement des devis';

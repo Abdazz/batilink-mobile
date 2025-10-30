@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/app_config.dart';
+import 'edit_professional_profile_screen.dart';
 
 class ProfessionalProfileScreen extends StatefulWidget {
   final String token;
@@ -272,6 +273,52 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen> {
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.of(context).pop(),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit, color: Colors.white),
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => EditProfessionalProfileScreen(
+                    initialData: _professionalData,
+                    token: _token,
+                  ),
+                ),
+              );
+              
+              // Rafraîchir les données si le profil a été mis à jour
+              if (result is Map && result['success'] == true) {
+                // Mettre à jour les données locales avec les nouvelles données
+                final dynamic resultData = result['data'];
+                if (resultData is Map) {
+                  final Map<String, dynamic> updatedData = Map<String, dynamic>.from(resultData);
+                  final Map<String, dynamic> currentProfessional = (_professionalData?['professional'] is Map)
+                      ? Map<String, dynamic>.from(_professionalData!['professional']) 
+                      : <String, dynamic>{};
+                  
+                  final dynamic updatedProfessional = updatedData['professional'];
+                  if (updatedProfessional is Map) {
+                    currentProfessional.addAll(Map<String, dynamic>.from(updatedProfessional));
+                  }
+                  
+                  setState(() {
+                    _professionalData = {
+                      ...?_professionalData,
+                      ...updatedData,
+                      'professional': currentProfessional,
+                    };
+                  });
+                }
+                // Rafraîchir également depuis l'API pour s'assurer d'avoir les dernières données
+                await _loadProfessionalProfile();
+              } else if (result == true) {
+                // Ancien format de retour pour rétrocompatibilité
+                await _loadProfessionalProfile();
+              }
+            },
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(
@@ -355,6 +402,14 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen> {
                       const SizedBox(height: 12),
                       _buildBusinessHoursCard(),
                       const SizedBox(height: 24),
+
+                      // Section Portfolio
+                      if (_professionalData?['portfolios'] != null && (_professionalData!['portfolios'] as List).isNotEmpty) ...[
+                        _buildSectionTitle('Portfolio'),
+                        const SizedBox(height: 12),
+                        _buildPortfolioCard(),
+                        const SizedBox(height: 24),
+                      ],
 
                       // Section Coordonnées professionnelles
                       _buildSectionTitle('Coordonnées professionnelles'),
@@ -452,9 +507,17 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            _buildInfoRow('RCCM', _professionalData?['rccm_number'] ?? 'Non défini'),
-            const SizedBox(height: 8),
             _buildInfoRow('Description', _professionalData?['description'] ?? 'Aucune description'),
+            const SizedBox(height: 8),
+            _buildInfoRow('Années d\'expérience', '${_professionalData?['experience_years'] ?? '0'} ans'),
+            const SizedBox(height: 8),
+            _buildInfoRow('Taux horaire', '${_professionalData?['hourly_rate'] ?? '0'} FCFA/heure'),
+            const SizedBox(height: 8),
+            _buildInfoRow('Plage de prix', '${_professionalData?['min_price'] ?? '0'} - ${_professionalData?['max_price'] ?? '0'} FCFA'),
+            const SizedBox(height: 8),
+            _buildInfoRow('Rayon d\'intervention', '${_professionalData?['radius_km'] ?? '0'} km'),
+            const SizedBox(height: 8),
+            _buildInfoRow('Disponibilité', _professionalData?['is_available'] == true ? 'Disponible' : 'Non disponible'),
           ],
         ),
       ),
@@ -680,20 +743,209 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen> {
   }
 
   Widget _buildSkillChip(dynamic skill) {
+    final level = skill['level']?.toString().toLowerCase() ?? '';
+    Color levelColor = Colors.grey;
+    
+    // Définir la couleur en fonction du niveau
+    switch (level) {
+      case 'débutant':
+      case 'debutant':
+      case 'beginner':
+        levelColor = Colors.blue;
+        break;
+      case 'intermédiaire':
+      case 'intermediaire':
+      case 'intermediate':
+        levelColor = Colors.green;
+        break;
+      case 'avancé':
+      case 'avance':
+      case 'advanced':
+        levelColor = Colors.orange;
+        break;
+      case 'expert':
+        levelColor = Colors.red;
+        break;
+      default:
+        levelColor = Colors.grey;
+    }
+
+    final expYears = skill['experience_years'] != null 
+        ? ' • ${skill['experience_years']} ${skill['experience_years'] > 1 ? 'ans' : 'an'}'
+        : '';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      margin: const EdgeInsets.only(bottom: 8, right: 8),
       decoration: BoxDecoration(
         color: const Color(0xFF1E3A5F).withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFF1E3A5F).withOpacity(0.3)),
       ),
-      child: Text(
-        skill['name'] ?? 'Compétence',
-        style: GoogleFonts.poppins(
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-          color: const Color(0xFF1E3A5F),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            skill['name'] ?? 'Compétence',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF1E3A5F),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: levelColor.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  level.isNotEmpty ? level[0].toUpperCase() + level.substring(1) : 'N/A',
+                  style: GoogleFonts.poppins(
+                    fontSize: 10,
+                    color: levelColor,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              if (expYears.isNotEmpty) ...[
+                const SizedBox(width: 4),
+                Text(
+                  expYears,
+                  style: GoogleFonts.poppins(
+                    fontSize: 10,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPortfolioCard() {
+    final portfolios = _professionalData?['portfolios'] as List<dynamic>? ?? [];
+    
+    if (portfolios.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.photo_library, color: Color(0xFF1E3A5F)),
+                const SizedBox(width: 8),
+                Text(
+                  'Portfolio',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF1E3A5F),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 180,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: portfolios.length,
+                itemBuilder: (context, index) {
+                  final portfolio = portfolios[index];
+                  return _buildPortfolioItem(portfolio);
+                },
+              ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildPortfolioItem(Map<String, dynamic> portfolio) {
+    final imageUrl = portfolio['image_path']?.toString() ?? '';
+    final fullImageUrl = imageUrl.startsWith('http') 
+        ? imageUrl 
+        : '${AppConfig.baseUrl}${imageUrl.startsWith('/') ? '' : '/'}$imageUrl';
+
+    return Container(
+      width: 180,
+      margin: const EdgeInsets.only(right: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[200]!),  // Using ! as we know it's not null
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Image
+          Expanded(
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(7)),
+              child: imageUrl.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: fullImageUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Container(
+                        color: Colors.grey[200],
+                        child: const Center(child: CircularProgressIndicator()),
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        color: Colors.grey[200],
+                        child: const Icon(Icons.broken_image, color: Colors.grey),
+                      ),
+                    )
+                  : Container(
+                      color: Colors.grey[200],
+                      child: const Icon(Icons.image_not_supported, color: Colors.grey),
+                    ),
+            ),
+          ),
+          // Détails
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  portfolio['title'] ?? 'Sans titre',
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  portfolio['project_type']?.toString().toUpperCase() ?? '',
+                  style: GoogleFonts.poppins(
+                    fontSize: 10,
+                    color: Colors.blue,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -145,18 +145,37 @@ class ProClientService {
   Future<http.Response> getClientJobs({
     required String accessToken,
     Map<String, dynamic>? filters,
+    String? status,
+    String? userId,
   }) async {
+    // Créer une copie des filtres pour les modifier
+    final requestFilters = Map<String, dynamic>.from(filters ?? {});
+    
+    // Ajouter les filtres de statut et d'utilisateur s'ils sont fournis
+    if (status != null) requestFilters['status'] = status;
+    if (userId != null) requestFilters['user_id'] = userId;
+    
     final url = Uri.parse('${effectiveBaseUrl}/api/pro-client/jobs/client');
     final headers = {
       'Accept': 'application/json',
       'Authorization': 'Bearer $accessToken',
     };
 
-    final response = filters != null && filters.isNotEmpty
-        ? await http.post(url, headers: headers, body: jsonEncode(filters))
+    print('Filtres de requête: $requestFilters');
+    
+    final response = requestFilters.isNotEmpty
+        ? await http.post(
+            url, 
+            headers: {
+              ...headers,
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode(requestFilters),
+          )
         : await http.get(url, headers: headers);
 
     print('Réponse jobs client pro-client: ${response.statusCode}');
+    print('Corps de la réponse: ${response.body}');
     return response;
   }
 
@@ -242,25 +261,57 @@ class ProClientService {
   Future<http.Response> getQuotations({
     required String accessToken,
     String? context, // 'client', 'professional', ou null pour automatique
+    String? status, // Filtre par statut
+    String? userId, // Filtre par utilisateur
   }) async {
-    // Construire l'URL avec les paramètres de requête
-    final Uri url;
-    if (context != null) {
-      url = Uri.parse('${effectiveBaseUrl}/api/quotations?context=$context');
-    } else {
-      url = Uri.parse('${effectiveBaseUrl}/api/quotations');
+    try {
+      // Construire l'URL avec les paramètres de requête
+      final params = <String, dynamic>{};
+      
+      // Ajouter les paramètres de requête uniquement s'ils ne sont pas null
+      if (context != null && context.isNotEmpty) {
+        params['context'] = context;
+      }
+      
+      if (status != null && status.isNotEmpty) {
+        params['status'] = status;
+      }
+      
+      if (userId != null && userId.isNotEmpty) {
+        params['user_id'] = userId;
+      }
+      
+      // Construire l'URL de base
+      final baseUrl = '${effectiveBaseUrl}/api/quotations';
+      
+      // Créer l'URI avec les paramètres de requête
+      final uri = Uri.parse(baseUrl).replace(
+        queryParameters: params.isNotEmpty ? params : null,
+      );
+      
+      final headers = {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      };
+
+      print('Envoi de la requête GET vers: $uri');
+      print('Headers: $headers');
+      print('Paramètres: $params');
+
+      final response = await http.get(uri, headers: headers);
+
+      print('Réponse reçue - Statut: ${response.statusCode}');
+      print('Headers de la réponse: ${response.headers}');
+      
+      if (response.statusCode != 200) {
+        print('Erreur dans la réponse: ${response.body}');
+      }
+      
+      return response;
+    } catch (e) {
+      print('Erreur lors de la récupération des devis: $e');
+      rethrow;
     }
-
-    final headers = {
-      'Accept': 'application/json',
-      'Authorization': 'Bearer $accessToken',
-    };
-
-    final response = await http.get(url, headers: headers);
-
-    print('Réponse quotations pro-client: ${response.statusCode}');
-    print('URL appelée: $url');
-    return response;
   }
 
   Future<http.Response> updateQuotation({
@@ -392,18 +443,44 @@ class ProClientService {
 
   Future<Map<String, dynamic>?> parseProClientProfileResponse(http.Response response) async {
     if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-
-      if (data['success'] == true && data['data'] != null) {
-        final profileData = data['data'];
-
-        // Structure complète: user, professional, stats, recent_activity
-        if (profileData is Map<String, dynamic>) {
-          return profileData;
+      try {
+        final data = json.decode(response.body);
+        print('Données brutes de la réponse: $data');
+        
+        // Vérifier si la réponse contient directement les données du profil
+        if (data is Map && data['data'] != null) {
+          if (data['data'] is Map) {
+            return data['data'] as Map<String, dynamic>;
+          } else if (data['data'] is List) {
+            return {'quotations': data['data']};
+          }
         }
+        
+        // Si la réponse est directement une liste de devis
+        if (data is Map && data['quotations'] is List) {
+          return {'quotations': data['quotations']};
+        }
+        
+        // Si la réponse est une liste directe (format alternatif)
+        if (data is List) {
+          return {'quotations': data};
+        }
+        
+        // Si nous avons une clé 'data' mais qu'elle n'est ni une Map ni une List
+        if (data is Map) {
+          return Map<String, dynamic>.from(data);
+        }
+        
+        print('Format de réponse non reconnu');
+        return null;
+      } catch (e) {
+        print('Erreur lors de l\'analyse de la réponse: $e');
+        return null;
       }
+    } else {
+      print('Erreur HTTP ${response.statusCode}: ${response.body}');
+      return null;
     }
-    return null;
   }
 
   Future<List<dynamic>?> parseJobsResponse(http.Response response) async {
