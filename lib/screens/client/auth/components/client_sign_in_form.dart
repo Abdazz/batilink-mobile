@@ -71,7 +71,7 @@ class _ClientSignInFormState extends State<ClientSignInForm> {
         if (token != null && token.toString().isNotEmpty) {
           // Stocker le token dans SharedPreferences pour les futures requêtes
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('access_token', token.toString());
+          await prefs.setString('token', token.toString());
           await prefs.setString('user', jsonEncode(userData));
 
           if (mounted) {

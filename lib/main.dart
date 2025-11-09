@@ -1,9 +1,13 @@
 import 'package:batilink_mobile_app/screens/pro_client/pro_client_profile_screen.dart';
-
-import 'core/app_config.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'firebase_options.dart';
+import 'services/firebase_messaging_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'core/app_config.dart';
 import 'services/auth_service.dart';
+import 'services/notification_service.dart';
 import 'screens/splash/splash_screen.dart';
 import 'screens/onboarding/onboarding_presentation_screen.dart';
 import 'screens/onboarding/onboarding_role_screen.dart';
@@ -32,11 +36,28 @@ import 'screens/debug/network_diagnostic_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialisation de Firebase avec les options générées
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   // Création de l'instance d'AuthService avec l'URL de base
   final authService = AuthService(
     baseUrl: AppConfig.baseUrl,
   );
+
+  // Initialisation du service de messagerie Firebase
+  await FirebaseMessagingService.initialize();
+  
+  // Initialisation du service de notifications personnalisé
+  await NotificationService.initialize(
+    serverUrl: AppConfig.baseUrl,
+    authToken: await authService.getToken(),
+  );
+  
+  // Configuration des notifications en arrière-plan
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   runApp(
     Provider<AuthService>.value(
@@ -44,6 +65,15 @@ void main() async {
       child: MyApp(),
     ),
   );
+}
+
+// Gestionnaire de messages en arrière-plan
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  await FirebaseMessagingService.initialize();
 }
 
 class MyApp extends StatelessWidget {
@@ -89,6 +119,17 @@ class MyApp extends StatelessWidget {
             token: args?['token'],
             userData: args?['userData'],
             filters: args?['filters'],
+          );
+        },
+        '/pro-client/client-quotations': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return ProClientQuotationsScreen(
+            token: args?['token'],
+            userData: args?['userData'],
+            filters: {
+              ...?args?['filters'],
+              'context': 'client', // Forcer le contexte client
+            },
           );
         },
         '/pro-client/respond-quotations': (context) {
@@ -169,8 +210,8 @@ class MyApp extends StatelessWidget {
         '/client/quotations': (context) {
           final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
           return ClientQuotationsScreen(
-            token: args?['token'],
-            userData: args?['userData'],
+            token: args?['token'] ?? '',
+            userData: args?['userData'] ?? <String, dynamic>{},
           );
         },
         '/client/completed-quotations': (context) {

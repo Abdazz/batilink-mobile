@@ -1,5 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:batilink_mobile_app/core/app_config.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 import '../../services/auth_service.dart';
 import '../../services/pro_client_service.dart';
 
@@ -21,19 +26,30 @@ class ProClientQuotationsScreen extends StatefulWidget {
 
 class _ProClientQuotationsScreenState extends State<ProClientQuotationsScreen> {
   final ProClientService _proClientService = ProClientService(
-    baseUrl: 'http://10.0.2.2:8000',
-    authService: AuthService(baseUrl: 'http://10.0.2.2:8000'),
+    baseUrl: '${AppConfig.baseUrl}',
+    authService: AuthService(baseUrl: '${AppConfig.baseUrl}'),
   );
 
   List<dynamic> _quotations = [];
   bool _isLoading = true;
-  String? _error;
+  String? _errorMessage;
   bool _isProClient = false;
   String _finalToken = '';
+  final Set<String> _fetchingDetails = <String>{};
+  // Pas de filtre, on affiche tous les devis
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeData();
+    });
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Recharger les devis si les arguments de route changent
     _initializeData();
   }
 
@@ -50,7 +66,7 @@ class _ProClientQuotationsScreenState extends State<ProClientQuotationsScreen> {
 
     if (_finalToken.isEmpty) {
       setState(() {
-        _error = 'Token d\'accès non trouvé';
+        _errorMessage = 'Token d\'accès non trouvé';
         _isLoading = false;
       });
       return;
@@ -62,154 +78,354 @@ class _ProClientQuotationsScreenState extends State<ProClientQuotationsScreen> {
   bool _detectProClientRole() {
     // Vérifier les données utilisateur passées en argument
     final userData = widget.userData;
-    if (userData != null) {
-      // Vérifier si le rôle est directement dans userData
-      if (userData.containsKey('role') && userData['role'] == 'pro_client') {
-        return true;
+    if (userData == null) return false;
+
+    // Fonction pour extraire le rôle d'un objet utilisateur
+    String? extractRole(dynamic user) {
+      if (user == null) return null;
+      if (user is Map) {
+        if (user['role'] is String) return user['role'];
+        if (user['user'] is Map) return user['user']['role']?.toString();
       }
-      // Vérifier la structure imbriquée data.user.role
-      if (userData.containsKey('data') &&
-          userData['data'] is Map &&
-          userData['data']['user'] is Map &&
-          userData['data']['user']['role'] == 'pro_client') {
-        return true;
-      }
-      // Vérifier la structure imbriquée user.role
-      if (userData.containsKey('user') &&
-          userData['user'] is Map &&
-          userData['user']['role'] == 'pro_client') {
-        return true;
-      }
+      return null;
     }
 
-    return false;
+    // Vérifier différentes structures de données possibles
+    final role = userData['role']?.toString() ??
+                extractRole(userData['data'] ?? userData['user'] ?? userData);
+
+    print('Rôle détecté: $role');
+    
+    // Vérifier si l'utilisateur a le rôle pro_client
+    return role == 'pro_client' || role == 'professional';
+  }
+
+  // Méthode pour obtenir l'ID de l'utilisateur connecté
+  String? _getCurrentUserId() {
+    if (widget.userData == null) return null;
+    
+    // Vérifier si l'ID est directement dans userData
+    if (widget.userData!['id'] != null) {
+      return widget.userData!['id'].toString();
+    }
+    
+    // Vérifier la structure imbriquée data.user.id
+    if (widget.userData!['data'] != null && 
+        widget.userData!['data'] is Map &&
+        widget.userData!['data']['user'] != null && 
+        widget.userData!['data']['user'] is Map &&
+        widget.userData!['data']['user']['id'] != null) {
+      return widget.userData!['data']['user']['id'].toString();
+    }
+    
+    // Vérifier la structure imbriquée user.id
+    if (widget.userData!['user'] != null && 
+        widget.userData!['user'] is Map &&
+        widget.userData!['user']['id'] != null) {
+      return widget.userData!['user']['id'].toString();
+    }
+    
+    return null;
+  }
+
+  // Construction des puces de filtre de statut
+  Future<void> _ensureQuotationDetails(String quotationId) async {
+    if (_fetchingDetails.contains(quotationId) || _finalToken.isEmpty) return;
+    _fetchingDetails.add(quotationId);
+    
+    try {
+      print('🔍 Chargement des détails du devis: $quotationId');
+      final response = await http.get(
+        Uri.parse('${AppConfig.baseUrl}/api/quotations/$quotationId'),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $_finalToken',
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final detailed = data['data'] ?? {};
+        
+        // Trouver l'index du devis à mettre à jour
+        final idx = _quotations.indexWhere((e) => e['id']?.toString() == quotationId);
+        
+        if (idx != -1 && mounted) {
+          setState(() {
+            _quotations[idx] = {
+              ..._quotations[idx],
+              // Mettre à jour uniquement les champs nécessaires
+              if (detailed['amount'] != null) 'amount': detailed['amount'],
+              if (detailed['proposed_date'] != null) 'proposed_date': detailed['proposed_date'],
+              if (detailed['professional_notes'] != null) 'professional_notes': detailed['professional_notes'],
+              if (detailed['notes'] != null) 'notes': detailed['notes'],
+              if (detailed['status'] != null) 'status': detailed['status'],
+              if (detailed['professional'] != null) 'professional': detailed['professional'],
+              if (detailed['client'] != null) 'client': detailed['client'],
+            };
+          });
+          print('✅ Détails du devis $quotationId mis à jour avec succès');
+        }
+      } else {
+        print('❌ Erreur lors du chargement des détails du devis: ${response.statusCode}');
+        print('Réponse: ${response.body}');
+      }
+    } catch (e, stackTrace) {
+      print('❌ Erreur lors du chargement des détails du devis: $e');
+      print('Stack trace: $stackTrace');
+    } finally {
+      _fetchingDetails.remove(quotationId);
+    }
+  }
+
+  @override
+  void didUpdateWidget(ProClientQuotationsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.token != oldWidget.token || widget.userData != oldWidget.userData) {
+      _initializeData();
+    }
   }
 
   Future<void> _loadQuotations() async {
+    if (!mounted) return;
+    
     setState(() {
       _isLoading = true;
-      _error = null;
+      _errorMessage = null;
     });
 
     try {
-      // Récupérer les filtres passés en paramètres ou utiliser des valeurs par défaut
-      final statusFilter = widget.filters?['status']?.toString() ?? 'pending,quoted,accepted';
-      final userId = widget.filters?['user_id']?.toString();
-      
-      final response = await _proClientService.getQuotations(
-        accessToken: _finalToken,
-        context: 'client', // Mode client
-        status: statusFilter,
-        userId: userId,
+      final token = _finalToken;
+      final userId = _getCurrentUserId();
+
+      if (token.isEmpty) {
+        setState(() {
+          _errorMessage = 'Token d\'authentification manquant';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      if (userId == null) {
+        setState(() {
+          _errorMessage = 'Impossible d\'identifier l\'utilisateur';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Pas de filtre, on récupère tous les devis
+      final params = <String, dynamic>{
+        'context': _isProClient ? 'professional' : 'client',
+      };
+
+      final uri = Uri.parse('${AppConfig.baseUrl}/api/quotations').replace(
+        queryParameters: params,
       );
 
-      if (response.statusCode == 200) {
-        final data = await _proClientService.parseProClientProfileResponse(response);
-        if (data != null && data['quotations'] != null) {
-          setState(() {
-            _quotations = data['quotations'] as List<dynamic>;
-          });
+      print('Chargement des devis avec les paramètres: $params');
+      
+      final response = await http.get(
+        uri,
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (mounted) {
+        if (response.statusCode == 200) {
+          final responseData = json.decode(response.body);
+          
+          if (responseData['data'] != null && responseData['data'] is List) {
+            setState(() {
+              _quotations = List<Map<String, dynamic>>.from(
+                responseData['data'].map((x) => Map<String, dynamic>.from(x as Map)),
+              );
+            });
+
+            // Charger les détails pour chaque devis
+            for (var quotation in _quotations) {
+              final id = quotation['id']?.toString();
+              if (id != null) {
+                await _ensureQuotationDetails(id);
+              }
+            }
+          } else {
+            setState(() {
+              _quotations = [];
+              _errorMessage = 'Format de réponse inattendu';
+            });
+          }
         } else {
           setState(() {
-            _quotations = [];
+            _errorMessage = 'Erreur lors du chargement des devis: ${response.statusCode}';
           });
+          print('Erreur de l\'API: ${response.body}');
         }
-      } else {
-        setState(() => _error = 'Erreur lors du chargement des devis');
       }
-    } catch (e) {
-      setState(() => _error = 'Erreur: ${e.toString()}');
+    } on http.ClientException catch (e) {
+      final errorMsg = 'Erreur de connexion: ${e.message}';
+      print('❌ $errorMsg');
+      if (mounted) {
+        setState(() => _errorMessage = errorMsg);
+      }
+    } on TimeoutException catch (_) {
+      const errorMsg = 'Délai d\'attente dépassé';
+      print('⏱️ $errorMsg');
+      if (mounted) {
+        setState(() => _errorMessage = errorMsg);
+      }
+    } catch (e, stackTrace) {
+      print('❌ Erreur inattendue: $e');
+      print('Stack trace: $stackTrace');
+      if (mounted) {
+        setState(() => _errorMessage = 'Erreur inattendue: ${e.toString().split('\n').first}');
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Déterminer le titre en fonction des filtres
-    final bool isMyQuotations = widget.filters?['user_id'] != null;
-    
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
-              child: Text(
-                isMyQuotations ? 'Mes demandes' : 'Devis reçus',
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 18),
-              ),
-            ),
-            if (_isProClient) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.orange, width: 1),
-                ),
-                constraints: const BoxConstraints(maxWidth: 100),
-                child: Text(
-                  'PRO-CLIENT',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.orange.shade800,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
+        title: Text(_isProClient ? 'Mes Devis (Mode Pro)' : 'Mes Demandes (Mode Client)'),
+        backgroundColor: const Color(0xFFFFCC00),
+        elevation: 0,
+        actions: [
+          // Indicateur de chargement
+          if (_isLoading)
+            const Padding(
+              padding: EdgeInsets.only(right: 16.0),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                   ),
                 ),
               ),
-            ],
-          ],
-        ),
-        backgroundColor: const Color(0xFFFFCC00),
-        elevation: 0,
+            ),
+          
+          // Bouton de rafraîchissement
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            onPressed: _isLoading ? null : _loadQuotations,
+            tooltip: 'Rafraîchir',
+          ),
+          
+          // Badge Pro-Client
+          if (_isProClient)
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange, width: 1),
+                  ),
+                  child: const Text(
+                    'PRO',
+                    style: TextStyle(
+                      color: Color(0xFFFF6B00),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
+      
+      // Contenu principal
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
+          : _errorMessage != null
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(_error!, style: const TextStyle(color: Colors.red)),
+                      Text(
+                        _errorMessage!, 
+                        style: const TextStyle(color: Colors.red),
+                      ),
                       const SizedBox(height: 16),
                       ElevatedButton(
-                        onPressed: _loadQuotations,
-                        child: const Text('Réessayer'),
-                      ),
-                    ],
-                  ),
-                )
-              : _quotations.isEmpty
-                  ? const Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.inbox, size: 64, color: Colors.grey),
-                          SizedBox(height: 16),
-                          Text(
-                            'Aucun devis reçu',
-                            style: TextStyle(fontSize: 18, color: Colors.grey),
+                              onPressed: _loadQuotations,
+                              child: const Text('Réessayer'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : _quotations.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.inbox_outlined, 
+                                  size: 64, 
+                                  color: Colors.grey,
+                                ),
+                                const SizedBox(height: 16),
+                                const Text(
+                                  'Aucun devis trouvé',
+                                  style: TextStyle(
+                                    fontSize: 16, 
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _quotations.length,
+                            itemBuilder: (context, index) {
+                              final quote = _quotations[index];
+                              return _buildQuotationCard(quote);
+                            },
                           ),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _quotations.length,
-                      itemBuilder: (context, index) {
-                        final quotation = _quotations[index];
-                        return _buildQuotationCard(quotation);
-                      },
-                    ),
-    );
+          );
   }
 
   Widget _buildQuotationCard(dynamic quotation) {
+    // Vérifier que la quotation est une Map
+    if (quotation == null) return const SizedBox.shrink();
+    
+    // Convertir en Map si ce n'est pas déjà le cas
+    final quote = quotation is Map ? Map<String, dynamic>.from(quotation) : <String, dynamic>{};
+    
+    // Extraire les données du professionnel et du client de manière sécurisée
+    final professional = quote['professional'] is Map ? 
+      Map<String, dynamic>.from(quote['professional'] as Map) : null;
+    final client = quote['client'] is Map ? 
+      Map<String, dynamic>.from(quote['client'] as Map) : null;
+    
+    // Déterminer le nom à afficher selon le rôle de l'utilisateur
+    String displayName = 'Inconnu';
+    if (_isProClient) {
+      if (client != null) {
+        final firstName = client['first_name']?.toString() ?? '';
+        final lastName = client['last_name']?.toString() ?? '';
+        displayName = '$firstName $lastName'.trim();
+        if (displayName.isEmpty) displayName = 'Client';
+      } else {
+        displayName = 'Client';
+      }
+    } else if (professional != null) {
+      displayName = professional['company_name']?.toString() ?? 'Professionnel';
+    }
+    
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
@@ -224,22 +440,27 @@ class _ProClientQuotationsScreenState extends State<ProClientQuotationsScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  quotation['title'] ?? 'Sans titre',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1976D2),
+                Expanded(
+                  child: Text(
+                    quote['title']?.toString() ?? 'Sans titre',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1976D2),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: _getStatusColor(quotation['status']),
+                    color: _getStatusColor(quote['status']?.toString()),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    quotation['status'] ?? 'En attente',
+                    _formatStatus(quote['status']?.toString() ?? 'pending'),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -251,34 +472,50 @@ class _ProClientQuotationsScreenState extends State<ProClientQuotationsScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              quotation['description'] ?? 'Aucune description',
+              quote['description']?.toString() ?? 'Aucune description',
               style: TextStyle(color: Colors.grey[600]),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 12),
+            if (quote['amount'] != null) ...[
+              Row(
+                children: [
+                  const Icon(Icons.euro, size: 16, color: Colors.green),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${quote['amount']} €',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
             Row(
               children: [
-                const Icon(Icons.euro, size: 16, color: Colors.green),
+                const Icon(Icons.person_outline, size: 16, color: Colors.grey),
                 const SizedBox(width: 4),
                 Text(
-                  '${quotation['amount'] ?? '0'} €',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  'Par: ${quotation['professional_name'] ?? 'Professionnel'}',
+                  _isProClient ? 'Client: $displayName' : 'Pro: $displayName',
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Row(
               children: [
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () => _acceptQuotation(quotation['id']),
+                    onPressed: () {
+                      final id = quotation['id']?.toString();
+                      if (id != null) _acceptQuotation(id);
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       foregroundColor: Colors.white,
@@ -292,7 +529,10 @@ class _ProClientQuotationsScreenState extends State<ProClientQuotationsScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => _rejectQuotation(quotation['id']),
+                    onPressed: () {
+                      final id = quotation['id']?.toString();
+                      if (id != null) _rejectQuotation(id);
+                    },
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Colors.red),
                       foregroundColor: Colors.red,
@@ -310,15 +550,44 @@ class _ProClientQuotationsScreenState extends State<ProClientQuotationsScreen> {
       ),
     );
   }
+  
+  String _formatStatus(String status) {
+    if (status.isEmpty) return 'Inconnu';
+    
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return 'En attente';
+      case 'accepted':
+        return 'Accepté';
+      case 'rejected':
+        return 'Refusé';
+      case 'in_progress':
+        return 'En cours';
+      case 'completed':
+        return 'Terminé';
+      case 'cancelled':
+        return 'Annulé';
+      default:
+        return status;
+    }
+  }
 
   Color _getStatusColor(String? status) {
-    switch (status?.toLowerCase()) {
+    if (status == null || status.isEmpty) return Colors.grey;
+    
+    switch (status.toLowerCase()) {
       case 'pending':
         return Colors.orange;
       case 'accepted':
         return Colors.green;
       case 'rejected':
         return Colors.red;
+      case 'in_progress':
+        return Colors.blue;
+      case 'completed':
+        return Colors.purple;
+      case 'cancelled':
+        return Colors.grey;
       default:
         return Colors.grey;
     }

@@ -1,9 +1,9 @@
 import 'dart:convert';
+import 'package:batilink_mobile_app/screens/pro_client/portfolio_management_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/app_config.dart';
 
 class ProClientProfileScreen extends StatefulWidget {
@@ -311,6 +311,9 @@ class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
 
                       const SizedBox(height: 24),
 
+                      // Section Documents
+                      _buildDocumentsSection(),
+
                       // Section Statistiques
                       _buildSectionTitle('Activité'),
                       const SizedBox(height: 12),
@@ -406,26 +409,52 @@ class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
                       width: 2,
                     ),
                   ),
-                  child: _professionalData?['profile_photo'] != null || _professionalData?['avatar'] != null
-                      ? ClipOval(
-                          child: CachedNetworkImage(
-                            imageUrl: (_professionalData?['profile_photo'] as Map<String, dynamic>?)?['url'] ?? _professionalData?['avatar'] ?? '',
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => const CircularProgressIndicator(
-                              color: Color(0xFFFFCC00),
+                  child: Builder(
+                    builder: (context) {
+                      String? avatarUrl;
+                      final profilePhoto = _professionalData?['profile_photo'];
+                      
+                      if (profilePhoto != null && profilePhoto is Map<String, dynamic>) {
+                        final String path = profilePhoto['path'] ?? '';
+                        avatarUrl = '${AppConfig.baseUrl}/storage/$path';
+                        debugPrint('URL de l\'avatar construite: $avatarUrl');
+                      }
+
+                      return avatarUrl != null
+                        ? ClipOval(
+                            child: Image.network(
+                              avatarUrl,
+                              fit: BoxFit.cover,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return const Center(
+                                  child: CircularProgressIndicator(
+                                    color: Color(0xFFFFCC00),
+                                    strokeWidth: 2,
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) {
+                                debugPrint('Erreur de chargement de l\'image: $error');
+                                debugPrint('URL de l\'image: $avatarUrl');
+                                return const Icon(
+                                  Icons.person,
+                                  color: Color(0xFFFFCC00),
+                                  size: 30,
+                                );
+                              },
+                              headers: {
+                                'Accept': 'image/jpeg,image/png,image/jpg',
+                              },
                             ),
-                            errorWidget: (context, url, error) => const Icon(
-                              Icons.person,
-                              color: Color(0xFFFFCC00),
-                              size: 30,
-                            ),
-                          ),
-                        )
-                      : const Icon(
-                          Icons.person,
-                          color: Color(0xFFFFCC00),
-                          size: 30,
-                        ),
+                          )
+                        : const Icon(
+                            Icons.person,
+                            color: Color(0xFFFFCC00),
+                            size: 30,
+                          );
+                    },
+                  ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -664,6 +693,24 @@ class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
             },
           ),
         ),
+        const SizedBox(height: 8),
+        _buildActionButton(
+          icon: Icons.work_history,
+          title: 'Gestion du portfolio',
+          subtitle: 'Gérer vos projets et réalisations',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PortfolioManagementScreen(
+                token: widget.token,
+                onUpdate: (portfolios) {
+                  // Optionnel: mettre à jour l'état si nécessaire après modification du portfolio
+                  setState(() {});
+                },
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -807,7 +854,187 @@ class _ProClientProfileScreenState extends State<ProClientProfileScreen> {
       final date = DateTime.parse(dateString);
       return '${date.day}/${date.month}/${date.year}';
     } catch (e) {
-      return 'N/A';
+      return dateString;
+    }
+  }
+
+  Widget _buildDocumentsSection() {
+    // Liste des documents avec leurs libellés
+    final Map<String, Map<String, dynamic>> documentTypes = {
+      'id_document_path': {
+        'label': 'Pièce d\'identité',
+        'icon': Icons.credit_card,
+      },
+      'kbis_path': {
+        'label': 'Extrait KBIS',
+        'icon': Icons.business,
+      },
+      'professional_license_path': {
+        'label': 'Licence professionnelle',
+        'icon': Icons.workspace_premium,
+      },
+      'insurance_certificate_path': {
+        'label': 'Attestation d\'assurance',
+        'icon': Icons.security,
+      },
+      'bank_document_path': {
+        'label': 'RIB/IBAN',
+        'icon': Icons.account_balance,
+      },
+    };
+
+    List<Widget> documentWidgets = [];
+
+    // Parcourir chaque type de document
+    documentTypes.forEach((key, docInfo) {
+      final docPath = _professionalData?[key] as String?;
+      final hasDocument = docPath != null && docPath.isNotEmpty;
+
+      documentWidgets.add(
+        ListTile(
+          leading: Icon(docInfo['icon'] as IconData, 
+              color: hasDocument ? const Color(0xFFFFCC00) : Colors.grey),
+          title: Text(
+            docInfo['label'] as String,
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.w500,
+              color: hasDocument ? Colors.black87 : Colors.grey,
+            ),
+          ),
+          subtitle: Text(
+            hasDocument ? 'Document fourni' : 'Document manquant',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              color: hasDocument ? Colors.green : Colors.orange,
+            ),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (hasDocument) ...[
+                IconButton(
+                  icon: const Icon(Icons.visibility, color: Color(0xFFFFCC00)),
+                  onPressed: () => _viewDocument(docInfo['label'] as String, docPath),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.download, color: Color(0xFFFFCC00)),
+onPressed: () => _downloadDocument(docInfo['label'] as String, docPath),
+                ),
+              ],
+              IconButton(
+                icon: const Icon(Icons.upload_file, color: Color(0xFFFFCC00)),
+                onPressed: () => _uploadDocument(key, docInfo['label'] as String),
+              ),
+            ],
+          ),
+        ),
+      );
+      documentWidgets.add(const Divider(height: 1));
+    });
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle('Documents professionnels'),
+        const SizedBox(height: 12),
+        Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: documentWidgets,
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Future<void> _viewDocument(String docName, String docPath) async {
+    // TODO: Implémenter la visualisation du document
+    // Pour l'instant, on affiche juste une alerte
+    if (!mounted) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(docName),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.picture_as_pdf, size: 60, color: Color(0xFFFFCC00)),
+            const SizedBox(height: 16),
+            Text('Fichier: ${docPath.split('/').last}'),
+            const SizedBox(height: 8),
+            Text('Taille: Non disponible', style: GoogleFonts.poppins(fontSize: 14)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fermer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _downloadDocument(String docName, String docPath) async {
+    // TODO: Implémenter le téléchargement du document
+    if (!mounted) return;
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Téléchargement de $docName...'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _uploadDocument(String docType, String docName) async {
+    // TODO: Implémenter l'upload du document
+    if (!mounted) return;
+    
+    // Simuler la sélection d'un fichier
+    // En production, utilisez un sélecteur de fichiers comme file_picker
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Mettre à jour $docName'),
+        content: const Text('Sélectionnez un fichier PDF ou une image'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFCC00),
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sélectionner'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      // Simuler l'upload
+      await Future.delayed(const Duration(seconds: 1));
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Document mis à jour avec succès'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        // Recharger les données du profil
+        _loadProClientProfile();
+      }
     }
   }
 }

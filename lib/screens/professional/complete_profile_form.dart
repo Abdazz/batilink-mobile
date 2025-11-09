@@ -3,13 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:form_field_validator/form_field_validator.dart';
 import 'package:http/http.dart' as http;
+import '../../services/document_service.dart';
+import '../../models/document.dart';
+import 'package:path/path.dart' as path;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../services/api_service.dart';
+import '../../core/app_config.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'package:path/path.dart' as path;
-import 'package:mime/mime.dart';
-import 'package:http_parser/http_parser.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../../core/app_config.dart';
 
 class CompleteProfileForm extends StatefulWidget {
   final Map<String, dynamic>? initialData;
@@ -60,9 +61,12 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
 
   Future<void> _pickDocument() async {
     try {
+      // Récupérer les extensions autorisées pour ce type de document
+      final allowedExts = DocumentService.allowedExtensions['id_document'];
+      
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'],
+        allowedExtensions: allowedExts?.map((e) => e.substring(1)).toList() ?? ['pdf', 'jpg', 'jpeg', 'png'],
       );
 
       if (result != null) {
@@ -84,8 +88,8 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
   Future<void> _pickProfilePhoto() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['jpg', 'jpeg', 'png'],
+        type: FileType.image,
+        allowMultiple: false,
       );
 
       if (result != null) {
@@ -109,28 +113,31 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
 
     try {
       setState(() => _isUploading = true);
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token') ?? '';
+      final docService = DocumentService(token);
+      final file = File(_idDocumentPath!);
 
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('${AppConfig.baseUrl}/api/upload'),
-      );
+      final Document uploaded = await docService.uploadDocument(file, 'id_document');
 
-      request.files.add(await http.MultipartFile.fromPath(
-        'document',
-        _idDocumentPath!,
-        filename: _idDocumentName,
-      ));
-
-      final response = await request.send();
-      final responseData = await response.stream.bytesToString();
-
-      if (response.statusCode == 200) {
-        return {'id_document_path': jsonDecode(responseData)['path']};
-      } else {
-        throw Exception('Échec de l\'upload du document');
-      }
+      // Return the path expected by backend (filePath)
+      return {'id_document_path': uploaded.filePath};
     } catch (e) {
       print('Erreur lors de l\'upload: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: ${e.toString()}'),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'OK',
+              onPressed: () {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              },
+            ),
+          ),
+        );
+      }
       rethrow;
     } finally {
       if (mounted) {
@@ -318,27 +325,61 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
     return jsonEncode(_businessHours);
   }
 
-  // Méthode pour obtenir le type MIME d'un fichier à partir de son extension
-  String _getMimeType(String filePath) {
-    final extension = path.extension(filePath).toLowerCase();
-    switch (extension) {
-      case '.jpg':
-      case '.jpeg':
-        return 'image/jpeg';
-      case '.png':
-        return 'image/png';
-      case '.gif':
-        return 'image/gif';
-      default:
-        // Utiliser le package mime pour détecter le type à partir du contenu si nécessaire
-        final mimeType = lookupMimeType(filePath);
-        return mimeType ?? 'application/octet-stream';
-    }
-  }
 
   // Désactivez cette constante pour utiliser l'upload de document personnalisé
   static const bool USE_DEFAULT_DOCUMENT = true;
   static const String DEFAULT_DOCUMENT_PATH = 'chemin/vers/document_par_defaut.pdf';
+
+  Future<Map<String, dynamic>> _uploadPhotoBase64(String imagePath, String token) async {
+    try {
+      // Lire le fichier image
+      final file = File(imagePath);
+      final bytes = await file.readAsBytes();
+      final base64Image = base64Encode(bytes);
+      final fileName = _profilePhotoName ?? path.basename(imagePath);
+
+      print('=== DEBUG BASE64 UPLOAD ===');
+      print('Image encodée en base64, taille: ${base64Image.length} caractères');
+      print('Nom du fichier: $fileName');
+
+      // Envoyer vers l'endpoint base64 avec le bon token
+      final response = await ApiService.postWithToken(
+        'professional/profile-photo',
+        token: token,
+        data: {
+          'profile_photo_base64': base64Image,
+          'profile_photo_name': fileName,
+        },
+      );
+
+      print('=== DEBUG REQUEST ===');
+      print('URL: ${AppConfig.baseUrl}/api/professional/profile-photo');
+      print('Body envoyé: ${jsonEncode({
+        'profile_photo_base64': base64Image.substring(0, 50) + '...',
+        'profile_photo_name': fileName,
+      })}');
+
+      if (response != null) {
+        print('Réponse upload base64 - Body: $response');
+        return {
+          'success': true,
+          'message': 'Photo uploadée avec succès',
+          'data': response,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': 'Erreur lors de l\'upload de la photo',
+        };
+      }
+    } catch (e) {
+      print('Exception lors de l\'encodage base64: $e');
+      return {
+        'success': false,
+        'message': 'Erreur lors de l\'encodage: $e',
+      };
+    }
+  }
 
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) {
@@ -372,7 +413,11 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
             : _idDocumentPath,
       };
 
-      // Ajouter l'image en base64 si elle existe
+      // Récupérer le token d'authentification
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      
+      // Traiter la photo de profil si elle existe
       if (_profilePhotoPath != null) {
         try {
           final file = File(_profilePhotoPath!);
@@ -383,14 +428,18 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
             throw Exception('La taille de l\'image ne doit pas dépasser 5MB');
           }
           
+          // Lire et encoder l'image en base64
           final bytes = await file.readAsBytes();
-          final mimeType = _getMimeType(_profilePhotoPath!);
           final base64Image = base64Encode(bytes);
+          final fileName = _profilePhotoName ?? path.basename(_profilePhotoPath!);
           
-          // Ajouter l'image en base64 aux données du formulaire
-          formData['profile_photo_base64'] = 'data:$mimeType;base64,$base64Image';
+          // Ajouter les informations de la photo aux données du formulaire
+          formData['profile_photo_base64'] = 'data:image/jpeg;base64,$base64Image';
+          formData['profile_photo_name'] = fileName;
           
-          print('Image encodée en base64 (${(fileSize / 1024).toStringAsFixed(2)} KB)');
+          print('=== DEBUG: Photo encodée en base64 - Taille: ${base64Image.length} caractères');
+          print('=== DEBUG: Nom du fichier: $fileName');
+          
         } catch (e) {
           print('Erreur lors du traitement de l\'image: $e');
           rethrow;
@@ -403,9 +452,7 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
         'Accept': 'application/json',
       };
 
-      // Ajouter le token d'authentification
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      // Ajouter le token d'authentification depuis la variable token existante
       if (token != null) {
         headers['Authorization'] = 'Bearer $token';
       }
@@ -422,7 +469,7 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
       print('Réponse du serveur (${response.statusCode}): ${response.body}');
       
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final responseData = jsonDecode(response.body);
+        // Décodage de la réponse
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Profil mis à jour avec succès')),
@@ -847,30 +894,93 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                       'Documents professionnels',
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Document d\'identité personnel ou professionnel',
+                      style: TextStyle(fontSize: 14, color: Colors.grey[700], fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 8),
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          const TextSpan(text: 'Formats acceptés : '),
+                          TextSpan(
+                            text: '${(DocumentService.allowedExtensions['id_document'] ?? []).join(", ")}',
+                            style: const TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                          const TextSpan(text: '\nTaille maximale : '),
+                          const TextSpan(
+                            text: '5 MB',
+                            style: TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ],
+                      ),
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
                     const SizedBox(height: 16),
                     if (!USE_DEFAULT_DOCUMENT) ...[
                       if (_idDocumentPath != null)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 16.0),
-                          child: Row(
+                          child: Column(
                             children: [
-                              const Icon(Icons.insert_drive_file, size: 24, color: Colors.blue),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _idDocumentName!,
-                                  style: const TextStyle(fontSize: 14),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.close, size: 20),
-                                onPressed: () {
-                                  setState(() {
-                                    _idDocumentPath = null;
-                                    _idDocumentName = null;
-                                  });
-                                },
+                              Row(
+                                children: [
+                                  const Icon(Icons.insert_drive_file, size: 24, color: Colors.blue),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _idDocumentName!,
+                                      style: const TextStyle(fontSize: 14),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  // Afficher un aperçu si c'est une image
+                                  if (_idDocumentPath!.toLowerCase().endsWith('.jpg') ||
+                                      _idDocumentPath!.toLowerCase().endsWith('.jpeg') ||
+                                      _idDocumentPath!.toLowerCase().endsWith('.png'))
+                                    IconButton(
+                                      icon: const Icon(Icons.image, size: 20),
+                                      onPressed: () {
+                                        showDialog(
+                                          context: context,
+                                          builder: (context) => Dialog(
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                AppBar(
+                                                  title: Text(_idDocumentName!),
+                                                  leading: IconButton(
+                                                    icon: const Icon(Icons.close),
+                                                    onPressed: () => Navigator.of(context).pop(),
+                                                  ),
+                                                ),
+                                                Image.file(
+                                                  File(_idDocumentPath!),
+                                                  fit: BoxFit.contain,
+                                                  errorBuilder: (context, error, stackTrace) {
+                                                    return const Padding(
+                                                      padding: EdgeInsets.all(16.0),
+                                                      child: Icon(Icons.broken_image, size: 64),
+                                                    );
+                                                  },
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  IconButton(
+                                    icon: const Icon(Icons.close, size: 20),
+                                    onPressed: () {
+                                      setState(() {
+                                        _idDocumentPath = null;
+                                        _idDocumentName = null;
+                                      });
+                                    },
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -881,11 +991,7 @@ class _CompleteProfileFormState extends State<CompleteProfileForm> {
                           icon: const Icon(Icons.upload_file, size: 20),
                           label: const Text('Télécharger un document d\'identité'),
                         ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Formats acceptés : PDF, DOC, DOCX, JPG, PNG (max 5MB)',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
+
                     ] else
                       const Text(
                         'Document par défaut utilisé pour les tests',

@@ -95,107 +95,145 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     return null;
   }
 
-  String _resolveMediaUrl(String? raw) {
-    if (raw == null || raw.isEmpty) return '';
-    if (raw.contains('via.placeholder.com') || raw.contains('placeholder')) return '';
-    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-    // Toute URL relative: utiliser AppConfig.buildMediaUrl
-    try {
-      final path = raw.startsWith('/') ? raw : '/$raw';
-      final full = AppConfig.buildMediaUrl(path);
-      // Debug
-      // ignore: avoid_print
-      print('Resolved media URL: $raw -> $full');
-      return full;
-    } catch (_) {
-      // Fallback ancien comportement storage
-      if (raw.startsWith('/storage/') || raw.startsWith('storage/')) {
-        final cleanPath = raw.startsWith('/') ? raw.substring(1) : raw;
-        return '${AppConfig.baseUrl}/$cleanPath';
-      }
-      return raw;
+  String _resolveMediaUrl(String url) {
+    if (url.isEmpty) return '';
+    
+    // Supprimer les slashes en double
+    String cleanUrl = url.replaceAll(RegExp(r'/+'), '/');
+    
+    // Si l'URL commence déjà par http, la retourner telle quelle
+    if (url.startsWith('http')) {
+      return cleanUrl;
     }
+    
+    // Supprimer le préfixe /storage/ s'il est présent
+    if (cleanUrl.startsWith('/storage/')) {
+      cleanUrl = cleanUrl.substring(8); // Enlève '/storage/'
+    } else if (cleanUrl.startsWith('storage/')) {
+      cleanUrl = cleanUrl.substring(7); // Enlève 'storage/'
+    }
+    
+    // Construire l'URL complète
+    final baseUrl = 'http://192.168.1.95:8000';
+    return '$baseUrl/storage/$cleanUrl';
   }
 
   List<String> _extractPhotoUrls(dynamic source) {
     final List<String> urls = [];
     if (source == null) return urls;
 
-    dynamic raw = source;
-    
-    // Handle direct proof_photos array from acceptance_proof
-    if (raw is Map && raw.containsKey('proof_photos') && raw['proof_photos'] is List) {
-      final proofPhotos = raw['proof_photos'] as List;
-      for (final photo in proofPhotos) {
-        if (photo is Map) {
-          final url = photo['url']?.toString() ?? photo['path']?.toString();
-          if (url != null && url.isNotEmpty) {
-            urls.add(_resolveMediaUrl(url));
+    // Debug: Afficher la source pour le débogage
+    print('Extracting photo URLs from source: $source');
+
+    // Gestion des tableaux de photos dans les preuves
+    if (source is Map) {
+      // Gestion des preuves de démarrage et d'achèvement
+      if (source['photos'] is List) {
+        for (final photo in (source['photos'] as List)) {
+          if (photo is Map) {
+            final url = photo['url']?.toString() ?? photo['path']?.toString();
+            if (url != null && url.isNotEmpty) {
+              final resolvedUrl = _resolveMediaUrl(url);
+              print('Extracted photo URL: $url -> $resolvedUrl');
+              urls.add(resolvedUrl);
+            }
           }
         }
+        if (urls.isNotEmpty) return urls;
       }
-      if (urls.isNotEmpty) return urls;
-    }
-    
-    // Si string JSON
-    if (raw is String) {
-      final s = raw.trim();
-      if (s.startsWith('[') && s.endsWith(']')) {
-        try {
-          final decoded = json.decode(s);
-          raw = decoded;
-        } catch (_) {
-          // string non JSON: peut-être CSV
-          final parts = s.split(',');
-          for (final p in parts) {
-            final u = _resolveMediaUrl(p.trim());
-            if (u.isNotEmpty) urls.add(u);
+      
+      // Gestion des preuves d'acceptation
+      if (source['proof_photos'] is List) {
+        for (final photo in (source['proof_photos'] as List)) {
+          if (photo is Map) {
+            final url = photo['url']?.toString() ?? photo['path']?.toString();
+            if (url != null && url.isNotEmpty) {
+              final resolvedUrl = _resolveMediaUrl(url);
+              print('Extracted proof photo URL: $url -> $resolvedUrl');
+              urls.add(resolvedUrl);
+            }
           }
-          return urls;
         }
-      } else {
-        // Single path string
-        final u = _resolveMediaUrl(s);
-        if (u.isNotEmpty) urls.add(u);
+        if (urls.isNotEmpty) return urls;
+      }
+      
+      // Gestion des preuves d'achèvement
+      if (source['completion_photos'] is List) {
+        for (final photo in (source['completion_photos'] as List)) {
+          if (photo is Map) {
+            final url = photo['url']?.toString() ?? photo['path']?.toString();
+            if (url != null && url.isNotEmpty) {
+              final resolvedUrl = _resolveMediaUrl(url);
+              print('Extracted completion photo URL: $url -> $resolvedUrl');
+              urls.add(resolvedUrl);
+            }
+          }
+        }
+        if (urls.isNotEmpty) return urls;
+      }
+      
+      // Gestion des pièces jointes directes
+      final directUrl = source['url']?.toString() ?? source['path']?.toString();
+      if (directUrl != null && directUrl.isNotEmpty) {
+        final resolvedUrl = _resolveMediaUrl(directUrl);
+        print('Extracted direct URL: $directUrl -> $resolvedUrl');
+        urls.add(resolvedUrl);
         return urls;
       }
+      
+      // Parcourir toutes les clés pour trouver des URLs potentielles
+      final keys = ['review_photos', 'proof_photos', 'start_photos', 'completion_photos', 
+                   'cancellation_photos', 'photos', 'images', 'files', 'photo', 'image'];
+      for (final k in keys) {
+        if (source[k] != null) {
+          urls.addAll(_extractPhotoUrls(source[k]));
+        }
+      }
     }
-
-    // Si liste
-    if (raw is List) {
-      for (final item in raw) {
+    // Si c'est une liste, traiter chaque élément
+    else if (source is List) {
+      for (final item in source) {
         if (item is String) {
           final u = _resolveMediaUrl(item);
-          if (u.isNotEmpty) urls.add(u);
+          if (u.isNotEmpty) {
+            print('Extracted from list: $item -> $u');
+            urls.add(u);
+          }
         } else if (item is Map) {
-          final url = item['url']?.toString() ?? item['path']?.toString() ?? item['full_url']?.toString() ?? item['src']?.toString();
+          final url = item['url']?.toString() ?? item['path']?.toString() ?? 
+                     item['full_url']?.toString() ?? item['src']?.toString();
           if (url != null && url.isNotEmpty) {
             final u = _resolveMediaUrl(url);
-            if (u.isNotEmpty) urls.add(u);
+            print('Extracted from list item: $url -> $u');
+            urls.add(u);
           }
         }
       }
-      return urls;
     }
-
-    // Si map, chercher différentes clés possibles
-    if (raw is Map) {
-      final keys = ['review_photos', 'proof_photos', 'start_photos', 'completion_photos', 'cancellation_photos', 'photos', 'images', 'files'];
-      for (final k in keys) {
-        if (raw[k] != null) {
-          urls.addAll(_extractPhotoUrls(raw[k]));
+    // Si c'est une chaîne, essayer de la traiter comme une URL
+    else if (source is String) {
+      final s = source.trim();
+      if (s.isNotEmpty) {
+        // Essayer de parser comme JSON si ça ressemble à du JSON
+        if ((s.startsWith('[') && s.endsWith(']')) || (s.startsWith('{') && s.endsWith('}'))) {
+          try {
+            final decoded = json.decode(s);
+            return _extractPhotoUrls(decoded);
+          } catch (e) {
+            print('Failed to parse as JSON: $e');
+          }
+        }
+        
+        // Sinon, traiter comme une URL simple
+        final u = _resolveMediaUrl(s);
+        if (u.isNotEmpty) {
+          print('Extracted from string: $s -> $u');
+          urls.add(u);
         }
       }
-      // Si map représente directement un fichier unique
-      if (urls.isEmpty) {
-        final u = _resolveMediaUrl(
-          raw['url']?.toString() ?? raw['path']?.toString() ?? raw['full_url']?.toString() ?? raw['src']?.toString(),
-        );
-        if (u.isNotEmpty) urls.add(u);
-      }
     }
 
-    return urls;
+    return urls.toSet().toList(); // Éliminer les doublons
   }
 
   void _clearTempData() {
@@ -242,7 +280,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
       print('Contexte: ${widget.context}');
 
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token') ?? prefs.getString('access_token') ?? widget.token;
+      final token = prefs.getString('token') ?? widget.token;
 
       // Différentes logiques selon le contexte
       if (widget.context == QuotationContext.professional) {
@@ -735,7 +773,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token') ?? widget.token;
+      final token = prefs.getString('token') ?? widget.token;
 
       // Créer une requête multipart pour envoyer les fichiers
       final request = http.MultipartRequest(
@@ -957,7 +995,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token') ?? widget.token;
+      final token = prefs.getString('token') ?? widget.token;
 
       // Créer une requête multipart si on a des photos, sinon JSON
       http.MultipartRequest? request;
@@ -1418,7 +1456,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token') ?? widget.token;
+      final token = prefs.getString('token') ?? widget.token;
 
       final uri = Uri.parse('${AppConfig.baseUrl}/api/quotations/${widget.quotationId}/reviews');
       final request = http.MultipartRequest('POST', uri);
@@ -2074,7 +2112,7 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
   Widget _buildStepDetails() {
     final q = _currentQuotation ?? widget.quotation;
     final steps = <Widget>[];
-
+    
     // Debug: Afficher toutes les données disponibles dans le devis
     print('=== DEBUG DONNEES DEVIS (BACKEND) ===');
     print('Status: ${q['status']}');
@@ -2083,7 +2121,10 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     print('Cancellation proof: ${q['cancellation_proof']}');
     print('Acceptance proof: ${q['acceptance_proof']}');
     print('Review: ${q['review']}');
+    print('Attachments: ${q['attachments']}');
     print('========================================');
+
+    // Debug: Afficher les données temporaires
     print('=== DEBUG DONNEES TEMPORAIRES ===');
     print('Temp start date: $_tempStartDate');
     print('Temp start description: $_tempStartDescription');
@@ -2101,104 +2142,352 @@ class _UnifiedQuotationDetailScreenState extends State<UnifiedQuotationDetailScr
     // Acceptation du devis
     final acceptanceProof = q['acceptance_proof'];
     if (acceptanceProof != null && acceptanceProof is Map) {
-      steps.add(_buildStepCard(
-        '✅ Acceptation du devis',
-        [
-          if (acceptanceProof['acceptance_date'] != null)
-            _buildDetailItem('Date d\'acceptation', _formatDate(acceptanceProof['acceptance_date']), Icons.calendar_today),
-          if (acceptanceProof['proof_photos'] != null && acceptanceProof['proof_photos'] is List && (acceptanceProof['proof_photos'] as List).isNotEmpty)
-            _buildDetailItem('Photos serveur', '${(acceptanceProof['proof_photos'] as List).length} photo(s)', Icons.photo),
-          if (acceptanceProof['accepted_at'] != null)
-            _buildDetailItem('Horodatage', acceptanceProof['accepted_at'], Icons.access_time),
-        ],
-      ));
+      final List<Widget> acceptanceDetails = [];
+      
+      // Date de signature
+      if (acceptanceProof['signed_at'] != null) {
+        acceptanceDetails.add(_buildDetailItem('Date de signature', _formatDate(acceptanceProof['signed_at']), Icons.calendar_today));
+      } else if (acceptanceProof['accepted_at'] != null) {
+        acceptanceDetails.add(_buildDetailItem('Date d\'acceptation', _formatDate(acceptanceProof['accepted_at']), Icons.calendar_today));
+      }
+      
+      // Adresse IP
+      if (acceptanceProof['ip_address'] != null) {
+        acceptanceDetails.add(_buildDetailItem('Adresse IP', acceptanceProof['ip_address'], Icons.computer));
+      }
+      
+      // Signature (si disponible)
+      if (acceptanceProof['signature'] != null && acceptanceProof['signature'].toString().startsWith('data:image/')) {
+        acceptanceDetails.add(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 16),
+              Text('Signature', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey[300]!),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Image.memory(
+                  base64Decode(acceptanceProof['signature'].split(',').last),
+                  height: 100,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+      
+      // Preuves d'acceptation
+      final acceptancePhotoUrls = _extractPhotoUrls(acceptanceProof);
+      if (acceptancePhotoUrls.isNotEmpty) {
+        acceptanceDetails.addAll([
+          const SizedBox(height: 16),
+          Text('Preuves d\'acceptation', style: GoogleFonts.poppins(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          )),
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey[300]!),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Text('Photos d\'acceptation', 
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 14),
+                  ),
+                ),
+                const Divider(height: 1, thickness: 1),
+                ImageGalleryViewer(urls: acceptancePhotoUrls),
+              ],
+            ),
+          )
+        ]);
+      }
+      
+      if (acceptanceDetails.isNotEmpty) {
+        steps.add(_buildStepCard('✅ Acceptation du devis', acceptanceDetails));
+      }
     }
 
+    // Démarrage des travaux
     final startProof = q['start_proof'];
-    final hasServerStartData = startProof != null && startProof is Map && (startProof['start_date'] != null || startProof['initial_description'] != null);
-    final hasTempStartData = _tempStartDate != null || _tempStartDescription != null || (_tempStartPhotosCount != null && _tempStartPhotosCount! > 0);
+    final hasServerStartData = startProof != null && startProof is Map && 
+        (startProof['start_date'] != null || startProof['started_at'] != null || 
+         startProof['initial_description'] != null || startProof['notes'] != null ||
+         (startProof['photos'] != null && (startProof['photos'] as List).isNotEmpty) ||
+         (startProof['proof_photos'] != null && (startProof['proof_photos'] as List).isNotEmpty));
+    final hasTempStartData = _tempStartDate != null || _tempStartDescription != null || 
+        (_tempStartPhotosCount != null && _tempStartPhotosCount! > 0);
 
     if (hasServerStartData || hasTempStartData) {
-      steps.add(_buildStepCard(
-        '🚀 Démarrage des travaux',
-        [
-          // Données serveur depuis start_proof
-          if (startProof != null && startProof['start_date'] != null)
-            _buildDetailItem('Date de démarrage', _formatDate(startProof['start_date']), Icons.calendar_today),
-          if (startProof != null && startProof['initial_description'] != null && startProof['initial_description'].isNotEmpty)
-            _buildDetailItem('Description', startProof['initial_description'], Icons.description),
-          if (startProof != null && startProof['start_photos'] != null && startProof['start_photos'] is List && (startProof['start_photos'] as List).isNotEmpty)
-            _buildDetailItem('Photos serveur', '${(startProof['start_photos'] as List).length} photo(s)', Icons.photo),
-
-          // Données temporaires (toujours affichées si elles existent)
-          if (hasTempStartData && _tempStartDate != null)
-            _buildDetailItem('📝 Date temporaire', _tempStartDate!, Icons.edit_calendar, valueColor: Colors.orange),
-          if (hasTempStartData && _tempStartDescription != null)
-            _buildDetailItem('📝 Description temporaire', _tempStartDescription!, Icons.edit_note, valueColor: Colors.orange),
-          if (hasTempStartData && _tempStartPhotosCount != null && _tempStartPhotosCount! > 0)
-            _buildDetailItem('📝 Photos temporaires', '$_tempStartPhotosCount photo(s)', Icons.photo_camera, valueColor: Colors.orange),
-        ],
-      ));
+      final List<Widget> startDetails = [];
+      
+      // Données serveur depuis start_proof
+      if (startProof != null && startProof is Map) {
+        // Date de démarrage (gestion des différents formats de date possibles)
+        final startDate = startProof['start_date'] ?? startProof['started_at'];
+        if (startDate != null) {
+          startDetails.add(_buildDetailItem('Date de démarrage', _formatDate(startDate), Icons.calendar_today));
+        }
+        
+        // Notes/description (gestion des différents champs possibles)
+        final notes = startProof['notes'] ?? startProof['initial_description'];
+        if (notes != null && notes.toString().isNotEmpty) {
+          startDetails.add(_buildDetailItem('Notes', notes.toString(), Icons.notes));
+        }
+        
+        // Afficher les détails de démarrage
+        if (startProof['started_at'] != null) {
+          startDetails.add(_buildDetailItem('Démarré le', _formatDate(startProof['started_at']), Icons.calendar_today));
+        }
+        if (startProof['notes'] != null && startProof['notes'].isNotEmpty) {
+          startDetails.add(_buildDetailItem('Notes', startProof['notes'], Icons.notes));
+        }
+        
+        // Afficher les photos de démarrage
+        final startPhotoUrls = _extractPhotoUrls(startProof);
+        if (startPhotoUrls.isNotEmpty) {
+          startDetails.addAll([
+            const SizedBox(height: 16),
+            Text('Preuves de démarrage', style: GoogleFonts.poppins(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            )),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (startProof['notes'] != null && startProof['notes'].isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Text(startProof['notes'], 
+                        style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[800]),
+                      ),
+                    ),
+                  if (startProof['notes'] != null && startProof['notes'].isNotEmpty)
+                    const Divider(height: 1, thickness: 1),
+                  ImageGalleryViewer(urls: startPhotoUrls),
+                ],
+              ),
+            )
+          ]);
+        }
+      }
+      
+      // Données temporaires (toujours affichées si elles existent)
+      if (hasTempStartData) {
+        if (_tempStartDate != null) {
+          startDetails.add(_buildDetailItem('📝 Date temporaire', _tempStartDate!, Icons.edit_calendar, valueColor: Colors.orange));
+        }
+        if (_tempStartDescription != null) {
+          startDetails.add(_buildDetailItem('📝 Description temporaire', _tempStartDescription!, Icons.edit_note, valueColor: Colors.orange));
+        }
+        if (_tempStartPhotosCount != null && _tempStartPhotosCount! > 0) {
+          startDetails.add(_buildDetailItem('📝 Photos temporaires', '$_tempStartPhotosCount photo(s)', Icons.photo_camera, valueColor: Colors.orange));
+        }
+      }
+      
+      if (startDetails.isNotEmpty) {
+        steps.add(_buildStepCard('🚀 Démarrage des travaux', startDetails));
+      }
     }
 
     // Achèvement des travaux - données serveur ou temporaires
     final completionProof = q['completion_proof'];
-    final hasServerCompletionData = completionProof != null && completionProof is Map && (completionProof['completion_date'] != null || completionProof['final_description'] != null || completionProof['materials_used'] != null);
-    final hasTempCompletionData = _tempCompletionDate != null || _tempCompletionDescription != null || _tempMaterialsUsed != null || (_tempCompletionPhotosCount != null && _tempCompletionPhotosCount! > 0);
+    final hasServerCompletionData = completionProof != null && completionProof is Map && 
+        (completionProof['completion_date'] != null || completionProof['completed_at'] != null || 
+         completionProof['final_description'] != null || completionProof['notes'] != null ||
+         completionProof['materials_used'] != null || 
+         (completionProof['photos'] != null && (completionProof['photos'] as List).isNotEmpty) ||
+         (completionProof['completion_photos'] != null && (completionProof['completion_photos'] as List).isNotEmpty));
+    final hasTempCompletionData = _tempCompletionDate != null || _tempCompletionDescription != null || 
+        _tempMaterialsUsed != null || (_tempCompletionPhotosCount != null && _tempCompletionPhotosCount! > 0);
 
     if (hasServerCompletionData || hasTempCompletionData) {
-      steps.add(_buildStepCard(
-        '✅ Achèvement des travaux',
-        [
-          // Données serveur depuis completion_proof
-          if (completionProof != null && completionProof['completion_date'] != null)
-            _buildDetailItem('Date d\'achèvement', _formatDate(completionProof['completion_date']), Icons.calendar_today),
-          if (completionProof != null && completionProof['final_description'] != null && completionProof['final_description'].isNotEmpty)
-            _buildDetailItem('Description finale', completionProof['final_description'], Icons.description),
-          if (completionProof != null && completionProof['materials_used'] != null && completionProof['materials_used'].isNotEmpty)
-            _buildDetailItem('Matériaux utilisés', completionProof['materials_used'], Icons.inventory),
-          if (completionProof != null && completionProof['completion_photos'] != null && completionProof['completion_photos'] is List && (completionProof['completion_photos'] as List).isNotEmpty)
-            _buildDetailItem('Photos serveur', '${(completionProof['completion_photos'] as List).length} photo(s)', Icons.photo),
-
-          // Données temporaires (toujours affichées si elles existent)
-          if (hasTempCompletionData && _tempCompletionDate != null)
-            _buildDetailItem('📝 Date temporaire', _tempCompletionDate!, Icons.edit_calendar, valueColor: Colors.orange),
-          if (hasTempCompletionData && _tempCompletionDescription != null)
-            _buildDetailItem('📝 Description temporaire', _tempCompletionDescription!, Icons.edit_note, valueColor: Colors.orange),
-          if (hasTempCompletionData && _tempMaterialsUsed != null)
-            _buildDetailItem('📝 Matériaux temporaires', _tempMaterialsUsed!, Icons.edit, valueColor: Colors.orange),
-          if (hasTempCompletionData && _tempCompletionPhotosCount != null && _tempCompletionPhotosCount! > 0)
-            _buildDetailItem('📝 Photos temporaires', '$_tempCompletionPhotosCount photo(s)', Icons.photo_camera, valueColor: Colors.orange),
-        ],
-      ));
+      final List<Widget> completionDetails = [];
+      
+      // Données serveur depuis completion_proof
+      if (completionProof != null && completionProof is Map) {
+        // Date d'achèvement (gestion des différents formats de date possibles)
+        final completionDate = completionProof['completion_date'] ?? completionProof['completed_at'];
+        if (completionDate != null) {
+          completionDetails.add(_buildDetailItem('Date d\'achèvement', _formatDate(completionDate), Icons.calendar_today));
+        }
+        
+        // Description finale (gestion des différents champs possibles)
+        final description = completionProof['final_description'] ?? completionProof['notes'];
+        if (description != null && description.toString().isNotEmpty) {
+          completionDetails.add(_buildDetailItem('Description', description.toString(), Icons.description));
+        }
+        
+        // Matériaux utilisés
+        if (completionProof['materials_used'] != null && completionProof['materials_used'].toString().isNotEmpty) {
+          completionDetails.add(_buildDetailItem('Matériaux utilisés', completionProof['materials_used'], Icons.inventory));
+        }
+        
+        // Afficher les détails d'achèvement
+        if (completionProof['completed_at'] != null) {
+          completionDetails.add(_buildDetailItem('Terminé le', _formatDate(completionProof['completed_at']), Icons.calendar_today));
+        }
+        if (completionProof['notes'] != null && completionProof['notes'].isNotEmpty) {
+          completionDetails.add(_buildDetailItem('Notes', completionProof['notes'], Icons.notes));
+        }
+        if (completionProof['materials_used'] != null && completionProof['materials_used'].isNotEmpty) {
+          completionDetails.add(_buildDetailItem('Matériaux utilisés', completionProof['materials_used'], Icons.build));
+        }
+        
+        // Afficher les photos d'achèvement
+        final completionPhotoUrls = _extractPhotoUrls(completionProof);
+        if (completionPhotoUrls.isNotEmpty) {
+          completionDetails.addAll([
+            const SizedBox(height: 16),
+            Text('Preuves d\'achèvement', style: GoogleFonts.poppins(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            )),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (completionProof['notes'] != null && completionProof['notes'].isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Text(completionProof['notes'], 
+                        style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[800]),
+                      ),
+                    ),
+                  if (completionProof['notes'] != null && completionProof['notes'].isNotEmpty)
+                    const Divider(height: 1, thickness: 1),
+                  ImageGalleryViewer(urls: completionPhotoUrls),
+                ],
+              ),
+            )
+          ]);
+        }
+      }
+      
+      // Données temporaires (toujours affichées si elles existent)
+      if (hasTempCompletionData) {
+        if (_tempCompletionDate != null) {
+          completionDetails.add(_buildDetailItem('📝 Date temporaire', _tempCompletionDate!, Icons.edit_calendar, valueColor: Colors.orange));
+        }
+        if (_tempCompletionDescription != null) {
+          completionDetails.add(_buildDetailItem('📝 Description temporaire', _tempCompletionDescription!, Icons.edit_note, valueColor: Colors.orange));
+        }
+        if (_tempMaterialsUsed != null) {
+          completionDetails.add(_buildDetailItem('📝 Matériaux temporaires', _tempMaterialsUsed!, Icons.edit, valueColor: Colors.orange));
+        }
+        if (_tempCompletionPhotosCount != null && _tempCompletionPhotosCount! > 0) {
+          completionDetails.add(_buildDetailItem('📝 Photos temporaires', '$_tempCompletionPhotosCount photo(s)', Icons.photo_camera, valueColor: Colors.orange));
+        }
+      }
+      
+      if (completionDetails.isNotEmpty) {
+        steps.add(_buildStepCard('✅ Achèvement des travaux', completionDetails));
+      }
     }
 
     // Annulation - données serveur ou temporaires
     final cancellationProof = q['cancellation_proof'];
-    final hasServerCancellationData = cancellationProof != null && cancellationProof is Map && (cancellationProof['cancellation_date'] != null || cancellationProof['cancellation_reason'] != null);
-    final hasTempCancellationData = _tempCancellationDate != null || _tempCancellationReason != null || (_tempCancellationPhotosCount != null && _tempCancellationPhotosCount! > 0);
+    final hasServerCancellationData = cancellationProof != null && cancellationProof is Map && 
+        (cancellationProof['cancellation_date'] != null || 
+         cancellationProof['cancelled_at'] != null ||
+         cancellationProof['cancellation_reason'] != null ||
+         (cancellationProof['photos'] != null && (cancellationProof['photos'] as List).isNotEmpty));
+    final hasTempCancellationData = _tempCancellationDate != null || _tempCancellationReason != null || 
+        (_tempCancellationPhotosCount != null && _tempCancellationPhotosCount! > 0);
 
     if (hasServerCancellationData || hasTempCancellationData) {
-      steps.add(_buildStepCard(
-        '❌ Annulation',
-        [
-          // Données serveur depuis cancellation_proof
-          if (cancellationProof != null && cancellationProof['cancellation_date'] != null)
-            _buildDetailItem('Date d\'annulation', _formatDate(cancellationProof['cancellation_date']), Icons.calendar_today),
-          if (cancellationProof != null && cancellationProof['cancellation_reason'] != null && cancellationProof['cancellation_reason'].isNotEmpty)
-            _buildDetailItem('Raison', cancellationProof['cancellation_reason'], Icons.warning),
-          if (cancellationProof != null && cancellationProof['cancellation_proof'] != null && cancellationProof['cancellation_proof'] is List && (cancellationProof['cancellation_proof'] as List).isNotEmpty)
-            _buildDetailItem('Justificatifs serveur', '${(cancellationProof['cancellation_proof'] as List).length} fichier(s)', Icons.attach_file),
-
-          // Données temporaires (toujours affichées si elles existent)
-          if (hasTempCancellationData && _tempCancellationDate != null)
-            _buildDetailItem('📝 Date temporaire', _tempCancellationDate!, Icons.edit_calendar, valueColor: Colors.orange),
-          if (hasTempCancellationData && _tempCancellationReason != null)
-            _buildDetailItem('📝 Raison temporaire', _tempCancellationReason!, Icons.edit_note, valueColor: Colors.orange),
-          if (hasTempCancellationData && _tempCancellationPhotosCount != null && _tempCancellationPhotosCount! > 0)
-            _buildDetailItem('📝 Justificatifs temporaires', '$_tempCancellationPhotosCount fichier(s)', Icons.photo_camera, valueColor: Colors.orange),
-        ],
-      ));
+      final List<Widget> cancellationDetails = [];
+      
+      // Données serveur depuis cancellation_proof
+      if (cancellationProof != null && cancellationProof is Map) {
+        // Date d'annulation (gestion des différents formats de date possibles)
+        final cancellationDate = cancellationProof['cancellation_date'] ?? cancellationProof['cancelled_at'];
+        if (cancellationDate != null) {
+          cancellationDetails.add(_buildDetailItem('Date d\'annulation', _formatDate(cancellationDate), Icons.calendar_today));
+        }
+        
+        // Raison d'annulation
+        if (cancellationProof['cancellation_reason'] != null && cancellationProof['cancellation_reason'].isNotEmpty) {
+          cancellationDetails.add(_buildDetailItem('Raison', cancellationProof['cancellation_reason'], Icons.warning));
+        }
+        
+        // Afficher les photos d'annulation
+        final cancellationPhotoUrls = _extractPhotoUrls(cancellationProof);
+        if (cancellationPhotoUrls.isNotEmpty) {
+          cancellationDetails.addAll([
+            const SizedBox(height: 16),
+            Text('Justificatifs d\'annulation', style: GoogleFonts.poppins(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            )),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (cancellationProof['notes'] != null && cancellationProof['notes'].isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Text(cancellationProof['notes'], 
+                        style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[800]),
+                      ),
+                    ),
+                  if (cancellationProof['notes'] != null && cancellationProof['notes'].isNotEmpty)
+                    const Divider(height: 1, thickness: 1),
+                  ImageGalleryViewer(urls: cancellationPhotoUrls),
+                ],
+              ),
+            )
+          ]);
+        }
+      }
+      
+      // Données temporaires (toujours affichées si elles existent)
+      if (hasTempCancellationData) {
+        if (_tempCancellationDate != null) {
+          cancellationDetails.add(_buildDetailItem('📝 Date temporaire', _tempCancellationDate!, Icons.edit_calendar, valueColor: Colors.orange));
+        }
+        if (_tempCancellationReason != null) {
+          cancellationDetails.add(_buildDetailItem('📝 Raison temporaire', _tempCancellationReason!, Icons.edit_note, valueColor: Colors.orange));
+        }
+        if (_tempCancellationPhotosCount != null && _tempCancellationPhotosCount! > 0) {
+          cancellationDetails.add(_buildDetailItem('📝 Justificatifs temporaires', '$_tempCancellationPhotosCount fichier(s)', Icons.photo_camera, valueColor: Colors.orange));
+        }
+      }
+      
+      if (cancellationDetails.isNotEmpty) {
+        steps.add(_buildStepCard('❌ Annulation', cancellationDetails));
+      }
     }
 
     // Avis temporaire (si en cours de saisie)

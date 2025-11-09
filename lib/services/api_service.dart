@@ -10,7 +10,7 @@ class ApiService {
   // Méthode pour effectuer une requête GET
   static Future<Map<String, String>> _getHeaders() async {
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token') ?? prefs.getString('token');
+    final token = prefs.getString('token');
 
     return {
       'Content-Type': 'application/json',
@@ -66,10 +66,9 @@ class ApiService {
       return providedToken;
     }
 
-    // Fallback vers SharedPreferences si aucun token fourni
+    // Récupérer le token depuis SharedPreferences
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token') ?? prefs.getString('token');
-    return token;
+    return prefs.getString('token');
   }
 
   // Méthode pour effectuer une requête GET avec token personnalisé

@@ -1,13 +1,43 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../core/app_config.dart';
+import 'package:batilink_mobile_app/core/app_config.dart';
+import 'package:batilink_mobile_app/utils/error_handler.dart';
+import 'package:flutter/foundation.dart';
 
 class AuthService {
   final String baseUrl;
   AuthService({required this.baseUrl});
+
+  // Méthode utilitaire pour gérer les erreurs
+  Future<void> _handleError(dynamic error, StackTrace stackTrace, {String? customMessage}) async {
+    // Journalisation de l'erreur complète pour le débogage
+    debugPrint('Erreur d\'authentification: $error');
+    debugPrint('Stack trace: $stackTrace');
+
+    // Gestion des erreurs spécifiques
+    String errorMessage = customMessage ?? 'Une erreur est survenue';
+    
+    if (error is SocketException) {
+      errorMessage = 'Impossible de se connecter au serveur. Vérifiez votre connexion Internet.';
+    } else if (error is TimeoutException) {
+      errorMessage = 'La connexion a expiré. Veuillez réessayer.';
+    } else if (error is http.ClientException) {
+      errorMessage = 'Erreur de communication avec le serveur.';
+    } else if (error is FormatException) {
+      errorMessage = 'Erreur de format des données reçues du serveur.';
+    }
+
+    // Afficher une notification à l'utilisateur
+    await ErrorHandler.handleNetworkError(
+      error,
+      stackTrace,
+      customMessage: errorMessage,
+    );
+  }
 
   // Retourne l'URL de base telle quelle (pas de conversion automatique)
   String get effectiveBaseUrl {
@@ -21,6 +51,18 @@ class AuthService {
 
   // Configuration intelligente - essaie le nom de domaine, bascule sur IP si DNS échoue
   bool _useDirectIPFallback = false;
+  
+  // Récupère le token JWT de l'utilisateur connecté
+  Future<String?> getToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Utiliser la même clé que SessionService
+      return prefs.getString('token');
+    } catch (e) {
+      print('Erreur lors de la récupération du token: $e');
+      return null;
+    }
+  }
 
   // Test de connectivité avec diagnostic intelligent
   static Future<String> diagnoseConnection() async {
@@ -468,12 +510,17 @@ class AuthService {
     required String passwordConfirmation,
     required String role,
   }) async {
-    try {
-      // Essaie d'abord le nom de domaine (solution sécurisée)
-      final fullUrl = '${_smartBaseUrl}/api/register';
-      print('Tentative d\'inscription vers: $fullUrl');
+    // Vérifier d'abord la connexion Internet
+    final hasConnection = await ErrorHandler.checkInternetConnection();
+    if (!hasConnection) {
+      throw SocketException('Aucune connexion Internet');
+    }
 
-      final url = Uri.parse(fullUrl);
+    // Fonction pour effectuer l'inscription
+    Future<http.Response> performRegistration(String url) async {
+      debugPrint('Tentative d\'inscription vers: $url');
+
+      final uri = Uri.parse(url);
       final body = {
         'first_name': firstName,
         'last_name': lastName,
@@ -484,10 +531,10 @@ class AuthService {
         'role': role,
       };
 
-      print('Corps de la requête: $body');
+      debugPrint('Corps de la requête: $body');
 
       final response = await _smartHttpClient.post(
-        url,
+        uri,
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -495,69 +542,68 @@ class AuthService {
         body: jsonEncode(body),
       ).timeout(const Duration(seconds: 30));
 
-      print('Réponse du serveur (${response.statusCode}): ${response.body}');
-      return response;
-
-    } catch (e) {
-      print('Erreur lors de l\'inscription: $e');
-
-      // Diagnostic intelligent avant de basculer
-      final diagnosis = await diagnoseConnection();
-
-      if (diagnosis == 'IP_DIRECTE_OK' && !_useDirectIPFallback) {
-        print('🔄 BASCULE AUTOMATIQUE: Utilisation de l\'IP directe...');
-        _useDirectIPFallback = true;
-
+      debugPrint('Réponse du serveur (${response.statusCode}): ${response.body}');
+      
+      // Gestion des erreurs HTTP
+      if (response.statusCode >= 400) {
+        String errorMessage = 'Erreur lors de l\'inscription';
         try {
-          // Réessaie avec l'IP directe
-          final ipUrl = 'https://${AppConfig.directIP}/api/register';
-          print('Tentative avec IP directe: $ipUrl');
+          final errorData = jsonDecode(response.body);
+          errorMessage = errorData['message'] ?? errorData['error'] ?? errorMessage;
+        } catch (_) {
+          // En cas d'erreur de parsing, on garde le message par défaut
+        }
+        
+        await _handleError(
+          Exception('Erreur HTTP ${response.statusCode}'),
+          StackTrace.current,
+          customMessage: errorMessage,
+        );
+      }
+      
+      return response;
+    }
 
-          final url = Uri.parse(ipUrl);
-          final body = {
-            'first_name': firstName,
-            'last_name': lastName,
-            'email': email,
-            'phone': phone,
-            'password': password,
-            'password_confirmation': passwordConfirmation,
-            'role': role,
-          };
+    try {
+      // Essaie d'abord avec l'URL de base
+      return await performRegistration('${_smartBaseUrl}/api/register');
+    } catch (e, stackTrace) {
+      await _handleError(e, stackTrace);
+      
+      // Tentative de basculement automatique si nécessaire
+      if (!_useDirectIPFallback) {
+        final connectionStatus = await diagnoseConnection();
+        if (connectionStatus == 'IP_DIRECTE_OK') {
+          debugPrint('🔄 BASCULE AUTOMATIQUE: Utilisation de l\'IP directe...');
+          _useDirectIPFallback = true;
 
-          final response = await _smartHttpClient.post(
-            url,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: jsonEncode(body),
-          ).timeout(const Duration(seconds: 30));
-
-          print('✅ Réponse du serveur via IP (${response.statusCode}): ${response.body}');
-          return response;
-
-        } catch (ipError) {
-          print('❌ Échec aussi avec l\'IP directe: $ipError');
-          _useDirectIPFallback = false; // Reset pour les prochaines tentatives
+          try {
+            // Réessaie avec l'IP directe
+            return await performRegistration('https://${AppConfig.directIP}/api/register');
+          } catch (ipError, ipStack) {
+            debugPrint('❌ Échec aussi avec l\'IP directe: $ipError');
+            _useDirectIPFallback = false; // Reset pour les prochaines tentatives
+            await _handleError(ipError, ipStack);
+          }
         }
       }
 
-      // Messages d'erreur spécifiques selon le diagnostic
-      if (diagnosis == 'PAS_DE_CONNEXION_INTERNET') {
-        print('ERREUR: Aucune connexion Internet détectée');
-        print('Solution: Vérifiez votre connexion WiFi ou mobile');
-      } else if (diagnosis == 'IP_DIRECTE_ECHEC') {
-        print('ERREUR: Serveur inaccessible');
-        print('Le serveur ${AppConfig.directIP} ne répond pas');
-      } else if (e.toString().contains('Operation not permitted') || e.toString().contains('errno = 1')) {
-        print('ERREUR SECURITE RESEAU: L\'appareil bloque la connexion HTTPS');
-        print('Solutions recommandées:');
-        print('- Changez de réseau WiFi (certains réseaux d\'entreprise bloquent HTTPS)');
-        print('- Utilisez un réseau mobile (4G/5G) au lieu du WiFi');
-        print('- Activez un VPN pour contourner les restrictions');
-        print('- Redémarrez votre application après avoir changé de réseau');
+      // Messages d'erreur spécifiques
+      if (e is SocketException) {
+        await _handleError(
+          e,
+          stackTrace,
+          customMessage: 'Impossible de se connecter au serveur. Vérifiez votre connexion Internet.',
+        );
+      } else if (e is TimeoutException) {
+        await _handleError(
+          e,
+          stackTrace,
+          customMessage: 'La connexion a expiré. Veuillez réessayer.',
+        );
       }
 
+      // Relancer l'erreur pour permettre une gestion supplémentaire si nécessaire
       rethrow;
     }
   }
@@ -577,7 +623,7 @@ class AuthService {
       if (response.statusCode == 200) {
         // Supprimer le token du stockage local
         final prefs = await SharedPreferences.getInstance();
-        await prefs.remove('access_token');
+        await prefs.remove('token'); // Utiliser la même clé que SessionService
         await prefs.remove('user');
         return true;
       }

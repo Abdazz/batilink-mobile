@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
@@ -76,8 +75,9 @@ class _ClientSignUpFormState extends State<ClientSignUpForm> {
               responseData['data']['access_token'] != null) {
             
             // Stocker le token avec la bonne clé
+            final token = responseData['data']['access_token'];
             final prefs = await SharedPreferences.getInstance();
-            await prefs.setString('access_token', responseData['data']['access_token']);
+            await prefs.setString('token', token);
             await prefs.setString('user', jsonEncode(responseData['data']['user']));
             
             // Rediriger vers le tableau de bord client avec les arguments nécessaires

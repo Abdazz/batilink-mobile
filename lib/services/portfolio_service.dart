@@ -16,8 +16,8 @@ class PortfolioService {
   }
 
   /// Récupère la liste des portfolios du professionnel connecté
-  Future<http.Response> getPortfolios({required String accessToken}) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/professional/portfolios');
+  Future<http.Response> getPortfolios({required String accessToken, required String professionalId}) async {
+    final url = Uri.parse('${effectiveBaseUrl}/api/professionals/$professionalId/portfolios');
     final response = await http.get(
       url,
       headers: {
@@ -31,9 +31,10 @@ class PortfolioService {
   /// Récupère un portfolio spécifique
   Future<http.Response> getPortfolio({
     required String accessToken,
+    required String professionalId,
     required String portfolioId,
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/professional/portfolios/$portfolioId/');
+    final url = Uri.parse('${effectiveBaseUrl}/api/professionals/$professionalId/portfolios/$portfolioId');
     final response = await http.get(
       url,
       headers: {
@@ -47,6 +48,7 @@ class PortfolioService {
   /// Crée un nouveau portfolio
   Future<http.StreamedResponse> createPortfolio({
     required String accessToken,
+    required String professionalId,
     required String title,
     required String description,
     required String category,
@@ -56,7 +58,7 @@ class PortfolioService {
     String? completedAt,
     String? fileName,
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/professional/portfolios'); // Ajout du slash final comme attendu par Laravel
+    final url = Uri.parse('${effectiveBaseUrl}/api/professionals/$professionalId/portfolios');
     final request = http.MultipartRequest('POST', url);
 
     request.headers.addAll({
@@ -102,6 +104,7 @@ class PortfolioService {
   /// Met à jour un portfolio existant
   Future<http.StreamedResponse> updatePortfolio({
     required String accessToken,
+    required String professionalId,
     required String portfolioId,
     required String title,
     required String description,
@@ -112,7 +115,7 @@ class PortfolioService {
     String? filePath,
     String? fileName,
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/professional/portfolios/$portfolioId'); // Ajout du slash final
+    final url = Uri.parse('${effectiveBaseUrl}/api/professionals/$professionalId/portfolios/$portfolioId');
     final request = http.MultipartRequest('POST', url);
 
     request.headers.addAll({
@@ -162,9 +165,10 @@ class PortfolioService {
   /// Supprime un portfolio
   Future<http.Response> deletePortfolio({
     required String accessToken,
+    required String professionalId,
     required String portfolioId,
   }) async {
-    final url = Uri.parse('${effectiveBaseUrl}/api/professional/portfolios/$portfolioId'); // Ajout du slash final
+    final url = Uri.parse('${effectiveBaseUrl}/api/professionals/$professionalId/portfolios/$portfolioId');
     final response = await http.delete(
       url,
       headers: {

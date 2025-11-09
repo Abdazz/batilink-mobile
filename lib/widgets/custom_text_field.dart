@@ -20,6 +20,7 @@ class CustomTextField extends StatelessWidget {
   final void Function()? onTap;
   final TextInputAction? textInputAction;
   final void Function(String)? onFieldSubmitted;
+  final void Function(String?)? onSaved;
   final FocusNode? focusNode;
   final TextCapitalization textCapitalization;
 
@@ -43,6 +44,7 @@ class CustomTextField extends StatelessWidget {
     this.onTap,
     this.textInputAction,
     this.onFieldSubmitted,
+    this.onSaved,
     this.focusNode,
     this.textCapitalization = TextCapitalization.sentences,
   }) : super(key: key);
@@ -74,6 +76,7 @@ class CustomTextField extends StatelessWidget {
           onTap: onTap,
           textInputAction: textInputAction,
           onFieldSubmitted: onFieldSubmitted,
+          onSaved: onSaved,
           focusNode: focusNode,
           textCapitalization: textCapitalization,
           style: GoogleFonts.poppins(

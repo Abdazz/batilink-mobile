@@ -30,6 +30,7 @@ class Professional {
   final String address;
   final int radiusKm;
   final int completedJobs;
+  final int completedClientsCount;
   final List<ProfessionalSkill> detailedSkills;
   final Map<String, dynamic>? businessHours;
 
@@ -60,6 +61,7 @@ class Professional {
     this.address = '',
     this.radiusKm = 0,
     this.completedJobs = 0,
+    this.completedClientsCount = 0,
     List<ProfessionalSkill>? detailedSkills,
     this.businessHours,
   })  : skills = skills ?? [],
@@ -157,6 +159,7 @@ class Professional {
       address: json['address'] ?? '',
       radiusKm: json['radius_km'] ?? 0,
       completedJobs: json['completed_jobs'] ?? 0,
+      completedClientsCount: json['completed_clients_count'] ?? 0,
       detailedSkills: json['skills'] != null
           ? (json['skills'] as List<dynamic>).map((skill) =>
               ProfessionalSkill.fromJson(skill as Map<String, dynamic>)).toList()
@@ -167,31 +170,36 @@ class Professional {
 
   // Méthode helper pour extraire l'URL de la photo de profil depuis la nouvelle structure
   static String? _extractProfilePhotoUrl(dynamic profilePhotoData) {
-    if (profilePhotoData == null) {
+    try {
+      if (profilePhotoData == null) {
+        print('=== DEBUG PROFILE PHOTO ===');
+        print('profilePhotoData est null');
+        return null;
+      }
+
       print('=== DEBUG PROFILE PHOTO ===');
-      print('profilePhotoData est null');
+      print('profilePhotoData type: ${profilePhotoData.runtimeType}');
+      print('profilePhotoData value: $profilePhotoData');
+
+      if (profilePhotoData is Map) {
+        // Nouvelle structure avec path, url, type
+        final url = profilePhotoData['url']?.toString();
+        print('Structure Map détectée, URL extraite: $url');
+        return url;
+      }
+
+      if (profilePhotoData is String) {
+        // Ancienne structure avec juste l'URL
+        print('Structure String détectée: $profilePhotoData');
+        return profilePhotoData;
+      }
+
+      print('Type non reconnu pour profilePhotoData');
+      return null;
+    } catch (e) {
+      print('Erreur lors de l\'extraction de la photo de profil: $e');
       return null;
     }
-
-    print('=== DEBUG PROFILE PHOTO ===');
-    print('profilePhotoData type: ${profilePhotoData.runtimeType}');
-    print('profilePhotoData value: $profilePhotoData');
-
-    if (profilePhotoData is Map<String, dynamic>) {
-      // Nouvelle structure avec path, url, type
-      final url = profilePhotoData['url']?.toString();
-      print('Structure Map détectée, URL extraite: $url');
-      return url;
-    }
-
-    if (profilePhotoData is String) {
-      // Ancienne structure avec juste l'URL
-      print('Structure String détectée: $profilePhotoData');
-      return profilePhotoData;
-    }
-
-    print('Type non reconnu pour profilePhotoData');
-    return null;
   }
 
   Map<String, dynamic> toJson() {

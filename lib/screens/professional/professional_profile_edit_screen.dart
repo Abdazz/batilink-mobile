@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../services/api_service.dart';
 import '../../core/app_config.dart';
-import 'package:http/http.dart' as http;
+import '../../services/document_service.dart';
 
 class ProfessionalProfileEditScreen extends StatefulWidget {
   final String token;
@@ -47,6 +47,9 @@ class _ProfessionalProfileEditScreenState extends State<ProfessionalProfileEditS
   bool _isAvailable = true;
   String? _profilePhotoPath;
   String? _profilePhotoName;
+  // Document d'identité local selectionné
+  String? _idDocumentPath;
+  String? _idDocumentName;
   bool _isLoading = false;
   List<Map<String, dynamic>> _skills = [];
   final TextEditingController _skillNameCtrl = TextEditingController();
@@ -164,6 +167,25 @@ class _ProfessionalProfileEditScreenState extends State<ProfessionalProfileEditS
           const SnackBar(content: Text('Erreur lors de la sélection de la photo')),
         );
       }
+    }
+  }
+
+  Future<void> _pickDocument() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+      );
+
+      if (result != null) {
+        setState(() {
+          _idDocumentPath = result.files.single.path!;
+          _idDocumentName = result.files.single.name;
+        });
+      }
+    } catch (e) {
+      print('Erreur lors de la sélection du document: $e');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erreur lors de la sélection du document')));
     }
   }
 
@@ -294,7 +316,9 @@ class _ProfessionalProfileEditScreenState extends State<ProfessionalProfileEditS
       setState(() => _isLoading = true);
 
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token') ?? widget.token;
+      final token = prefs.getString('token') ?? widget.token;
+
+      
 
       // Construire seulement les champs qui ont été modifiés
       final Map<String, dynamic> updatedFields = {};
@@ -402,6 +426,22 @@ class _ProfessionalProfileEditScreenState extends State<ProfessionalProfileEditS
 
       if (newBusinessHours != oldBusinessHours) {
         updatedFields['business_hours'] = newBusinessHours;
+      }
+
+      // If user selected a new ID document, upload it now and include in updated fields
+      if (_idDocumentPath != null) {
+        try {
+          final docService = DocumentService(token);
+          final uploaded = await docService.uploadDocument(File(_idDocumentPath!), 'id_document');
+          if (uploaded.filePath.isNotEmpty) {
+            updatedFields['id_document_path'] = uploaded.filePath;
+          } else if (uploaded.url.isNotEmpty) {
+            updatedFields['id_document_path'] = uploaded.url;
+          }
+        } catch (e) {
+          print('Erreur lors de l\'upload du document: $e');
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur upload document: $e')));
+        }
       }
 
       // N'envoyer que si il y a des modifications
@@ -630,6 +670,60 @@ class _ProfessionalProfileEditScreenState extends State<ProfessionalProfileEditS
                         'Formats acceptés : JPG, PNG (max 5MB)',
                         style: TextStyle(fontSize: 12, color: Colors.grey),
                       ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Section Document d'identité
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Document d\'identité',
+                        style: GoogleFonts.poppins(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: _pickDocument,
+                            icon: const Icon(Icons.upload_file, size: 16),
+                            label: Text(_idDocumentPath != null ? 'Changer le document' : 'Ajouter un document'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFCC00),
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _idDocumentName ?? (widget.currentProfile['id_document_path'] ?? 'Aucun document sélectionné'),
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ),
+                          if (_idDocumentPath != null)
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  _idDocumentPath = null;
+                                  _idDocumentName = null;
+                                });
+                              },
+                              child: const Text('Annuler', style: TextStyle(color: Colors.red)),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text('Formats acceptés : PDF, JPG, PNG (max 10MB)', style: TextStyle(fontSize: 12, color: Colors.grey)),
                     ],
                   ),
                 ),

@@ -28,6 +28,7 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   String _token = '';
+  Map<String, dynamic> _userData = {};
   final Set<String> _fetchingDetails = <String>{};
   String _statusFilter = 'all'; // all, pending, quoted, accepted, in_progress, completed, cancelled, rejected
 
@@ -109,72 +110,269 @@ class _ClientQuotationsScreenState extends State<ClientQuotationsScreen> {
   }
 
   Future<void> _initializeData() async {
-    // Récupérer le token depuis SharedPreferences comme secours
+    print('=== DÉBOGAGE _initializeData ===');
+    
+    // Récupérer le token et les données utilisateur depuis SharedPreferences
     final prefs = await SharedPreferences.getInstance();
-    final tokenFromPrefs = prefs.getString('access_token') ?? '';
+    final tokenFromPrefs = prefs.getString('token') ?? '';
+    
+    print('Token du widget: ${widget.token?.isNotEmpty == true ? 'Présent' : 'Manquant'}');
+    print('Token depuis SharedPreferences: ${tokenFromPrefs.isNotEmpty ? 'Présent' : 'Manquant'}');
+    print('Données utilisateur reçues dans le widget: ${widget.userData}');
 
     // Utiliser le token passé en argument, ou celui de SharedPreferences comme secours
     final finalToken = widget.token?.isNotEmpty == true ? widget.token! : tokenFromPrefs;
 
     if (finalToken.isEmpty) {
+      final errorMsg = 'Token d\'authentification manquant';
+      print('Erreur: $errorMsg');
       setState(() {
-        _errorMessage = 'Token d\'authentification manquant';
+        _errorMessage = errorMsg;
         _isLoading = false;
       });
       return;
     }
 
+    print('Token final qui sera utilisé: ${finalToken.isNotEmpty ? 'Présent' : 'Manquant'}');
+    
+    // Mettre à jour le token
     setState(() {
       _token = finalToken;
     });
 
+    // Tenter de récupérer les données utilisateur
+    bool userDataLoaded = false;
+    
+    // 1. Vérifier si des données sont passées dans le widget
+    if (widget.userData != null && widget.userData!.isNotEmpty) {
+      print('Utilisation des données utilisateur du widget');
+      _userData = Map<String, dynamic>.from(widget.userData!);
+      userDataLoaded = true;
+    } 
+    // 2. Sinon, essayer de charger depuis SharedPreferences
+    else {
+      print('Aucune donnée utilisateur fournie, tentative de récupération depuis le stockage local...');
+      try {
+        final userDataStr = prefs.getString('user');
+        if (userDataStr != null && userDataStr.isNotEmpty) {
+          print('Données utilisateur trouvées dans le stockage local');
+          final userData = jsonDecode(userDataStr);
+          if (userData is Map) {
+            _userData = Map<String, dynamic>.from(userData);
+            userDataLoaded = true;
+            print('Données utilisateur chargées: $_userData');
+          }
+        } else {
+          print('Aucune donnée utilisateur trouvée dans le stockage local');
+        }
+      } catch (e) {
+        print('Erreur lors de la lecture des données utilisateur: $e');
+      }
+    }
+    
+    // 3. Si toujours pas de données utilisateur, essayer d'extraire l'ID du token JWT
+    if (!userDataLoaded) {
+      print('Tentative d\'extraction des informations du token JWT...');
+      try {
+        final parts = _token.split('.');
+        if (parts.length > 2) {
+          final payload = parts[1];
+          final normalized = base64Url.normalize(payload);
+          final resp = utf8.decode(base64Url.decode(normalized));
+          final payloadMap = json.decode(resp);
+          
+          if (payloadMap is Map && payloadMap['sub'] != null) {
+            _userData['id'] = payloadMap['sub'].toString();
+            print('ID utilisateur extrait du token JWT: ${_userData['id']}');
+            userDataLoaded = true;
+          }
+        }
+      } catch (e) {
+        print('Erreur lors de l\'extraction des données du token JWT: $e');
+      }
+    }
+    
+    // Si on a toujours pas de données utilisateur, on essaie quand même de charger les devis
+    // car le backend peut utiliser le token pour identifier l'utilisateur
     _loadQuotations();
   }
 
+  // Méthode utilitaire pour obtenir une valeur imbriquée dans une Map
+  dynamic _getNestedValue(Map<dynamic, dynamic> map, String key) {
+    try {
+      return key.split('.').fold<dynamic>(map, (current, key) => current != null && current is Map ? current[key] : null);
+    } catch (e) {
+      print('Erreur lors de l\'accès à la clé $key: $e');
+      return null;
+    }
+  }
+
   // Méthode pour obtenir l'ID de l'utilisateur connecté
-  String? _getCurrentUserId() {
-    if (widget.userData == null) return null;
+  Future<String?> _getCurrentUserId() async {
+    print('=== DÉBOGAGE _getCurrentUserId ===');
     
-    // Vérifier si l'ID est directement dans userData
-    if (widget.userData!['id'] != null) {
-      return widget.userData!['id'].toString();
+    // 1. D'abord, vérifier si on a déjà un ID dans _userData
+    if (_userData.isNotEmpty) {
+      print('Recherche de l\'ID dans _userData: $_userData');
+      
+      // Vérifier plusieurs clés possibles pour l'ID
+      final possibleIdKeys = ['id', 'user_id', 'userId', 'user.id', 'data.user.id'];
+      
+      for (var key in possibleIdKeys) {
+        final value = _getNestedValue(_userData, key);
+        if (value != null) {
+          final id = value.toString();
+          print('ID trouvé avec la clé $key dans _userData: $id');
+          return id;
+        }
+      }
+      
+      print('Aucun ID trouvé dans _userData avec les clés testées');
     }
     
-    // Vérifier la structure imbriquée data.user.id
-    if (widget.userData!['data'] != null && 
-        widget.userData!['data'] is Map &&
-        widget.userData!['data']['user'] != null && 
-        widget.userData!['data']['user'] is Map &&
-        widget.userData!['data']['user']['id'] != null) {
-      return widget.userData!['data']['user']['id'].toString();
+    // 2. Si pas trouvé, essayer avec widget.userData
+    if (widget.userData != null && widget.userData!.isNotEmpty) {
+      print('Recherche de l\'ID dans widget.userData: ${widget.userData}');
+      
+      // Vérifier plusieurs clés possibles pour l'ID
+      final possibleIdKeys = ['id', 'user_id', 'userId', 'user.id', 'data.user.id'];
+      
+      for (var key in possibleIdKeys) {
+        final value = _getNestedValue(widget.userData!, key);
+        if (value != null) {
+          final id = value.toString();
+          print('ID trouvé avec la clé $key dans widget.userData: $id');
+          return id;
+        }
+      }
     }
     
-    // Vérifier la structure imbriquée user.id
-    if (widget.userData!['user'] != null && 
-        widget.userData!['user'] is Map &&
-        widget.userData!['user']['id'] != null) {
-      return widget.userData!['user']['id'].toString();
+    // 3. Si on a toujours pas trouvé, essayer d'extraire du token JWT
+    if (_token.isNotEmpty) {
+      try {
+        print('Tentative d\'extraction de l\'ID depuis le token JWT...');
+        print('Token complet: ${_token.substring(0, _token.length > 50 ? 50 : _token.length)}...');
+        
+        final parts = _token.split('.');
+        print('Nombre de parties du token: ${parts.length}');
+        
+        if (parts.length > 2) {
+          final payload = parts[1];
+          print('Payload avant décodage: $payload');
+          
+          // Ajouter le padding manquant si nécessaire
+          String normalized = payload.padRight(
+            payload.length + (4 - payload.length % 4) % 4,
+            '=',
+          );
+          
+          print('Payload après padding: $normalized');
+          
+          try {
+            final decoded = utf8.decode(base64Url.decode(normalized));
+            print('Payload décodé: $decoded');
+            
+            final payloadMap = json.decode(decoded);
+            print('Payload parsé: $payloadMap');
+            
+            // Vérifier plusieurs champs possibles pour l'ID utilisateur
+            final possibleIdFields = ['sub', 'user_id', 'id', 'userId', 'user.id'];
+            
+            for (var field in possibleIdFields) {
+              final value = _getNestedValue(payloadMap, field);
+              if (value != null) {
+                final id = value.toString();
+                print('ID utilisateur trouvé dans le champ $field: $id');
+                return id;
+              }
+            }
+            
+            print('Aucun champ d\'ID utilisateur trouvé dans le payload');
+            print('Champs disponibles: ${payloadMap is Map ? payloadMap.keys.join(', ') : 'N/A'}');
+            
+          } catch (e) {
+            print('Erreur lors du décodage du payload: $e');
+          }
+        } else {
+          print('Format de token invalide: nombre de parties incorrect');
+        }
+      } catch (e) {
+        print('Erreur lors de l\'extraction de l\'ID du token JWT: $e');
+      }
     }
     
+    // 4. Si on a toujours pas trouvé, essayer de récupérer depuis SharedPreferences
+    try {
+      print('Tentative de récupération de l\'ID depuis SharedPreferences...');
+      final prefs = await SharedPreferences.getInstance();
+      final userDataStr = prefs.getString('user');
+      
+      if (userDataStr != null && userDataStr.isNotEmpty) {
+        try {
+          final userData = jsonDecode(userDataStr);
+          if (userData is Map) {
+            // Vérifier plusieurs clés possibles pour l'ID
+            final possibleIdKeys = ['id', 'user_id', 'userId', 'user.id'];
+            
+            for (var key in possibleIdKeys) {
+              final value = _getNestedValue(userData, key);
+              if (value != null) {
+                final id = value.toString();
+                print('ID trouvé avec la clé $key dans SharedPreferences: $id');
+                return id;
+              }
+            }
+            
+            print('Aucun ID trouvé dans les données de SharedPreferences');
+            print('Données disponibles dans SharedPreferences: $userData');
+          }
+        } catch (e) {
+          print('Erreur lors du décodage des données utilisateur: $e');
+        }
+      } else {
+        print('Aucune donnée utilisateur trouvée dans SharedPreferences');
+      }
+    } catch (e) {
+      print('Erreur lors de l\'accès à SharedPreferences: $e');
+    }
+    
+    print('Aucun ID utilisateur trouvé dans les données disponibles');
     return null;
   }
 
   Future<void> _loadQuotations() async {
     try {
       final token = _token;
-      final userId = _getCurrentUserId();
+      
+      // Ajout de logs pour le débogage
+      print('=== DÉBOGAGE _loadQuotations ===');
+      print('Token: ${token.isNotEmpty ? 'Présent' : 'Manquant'}');
+      print('Données utilisateur reçues: ${widget.userData}');
+      
+      // Récupérer l'ID utilisateur
+      final userId = await _getCurrentUserId();
+      print('ID utilisateur récupéré: $userId');
 
       if (token.isEmpty) {
+        final errorMsg = 'Token d\'authentification manquant';
+        print('Erreur: $errorMsg');
         setState(() {
-          _errorMessage = 'Token d\'authentification manquant';
+          _errorMessage = errorMsg;
           _isLoading = false;
         });
         return;
       }
 
       if (userId == null) {
+        final errorMsg = 'Impossible d\'identifier l\'utilisateur';
+        print('Erreur: $errorMsg');
+        print('Contenu de userData: ${widget.userData}');
+        
+        // Essayer de récupérer l'ID depuis le token (si nécessaire)
+        // Cette partie dépend de votre implémentation de décodage du JWT
+        
         setState(() {
-          _errorMessage = 'Impossible d\'identifier l\'utilisateur';
+          _errorMessage = errorMsg;
           _isLoading = false;
         });
         return;

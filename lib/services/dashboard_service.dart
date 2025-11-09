@@ -9,22 +9,7 @@ class DashboardService {
 
   Future<String?> _getToken() async {
     final prefs = await SharedPreferences.getInstance();
-
-    // Essaie d'abord la clé principale 'token'
-    String? token = prefs.getString('token');
-
-    // Si pas trouvé, essaie l'ancienne clé 'access_token' pour compatibilité
-    if (token == null) {
-      token = prefs.getString('access_token');
-      if (token != null) {
-        print('Token trouvé avec l\'ancienne clé access_token - migration recommandée');
-        // Migre vers la nouvelle clé pour éviter la confusion
-        await prefs.setString('token', token);
-        await prefs.remove('access_token');
-        print('Token migré vers la clé principale');
-      }
-    }
-
+    final token = prefs.getString('token');
     print('Token récupéré depuis SharedPreferences: ${token != null ? 'Présent (${token.length} caractères)' : 'Absent'}');
     return token;
   }

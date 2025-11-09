@@ -40,7 +40,21 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
     _scrollController.addListener(_onScroll);
     _loadProfessionals();
     _detectUserRole();
+    
+    // Ajouter un écouteur sur le champ de recherche
+    _searchController.addListener(() {
+      // Délai pour éviter de faire trop de requêtes pendant la saisie
+      const duration = Duration(milliseconds: 500);
+      if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
+      _searchDebounce = Timer(duration, () {
+        if (mounted) {
+          _loadProfessionals(reset: true);
+        }
+      });
+    });
   }
+  
+  Timer? _searchDebounce;
 
   // Détecter le rôle de l'utilisateur de manière asynchrone
   Future<void> _detectUserRole() async {
@@ -320,25 +334,143 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
   int _currentPage = 1;
   final int _perPage = 10;
 
-  // Filtres
+  // Variables d'état pour les filtres
   String _selectedProfession = '';
   String _location = '';
-  double _minRating = 0;
+  String _selectedSkill = '';
+  double _minRating = 0.0;
   bool _availableNow = false;
-  String _sortBy = 'relevance';
-  // Suppression de la variable inutilisée
+  int _searchRadius = 10; // Rayon de recherche par défaut en kms
+  final List<String> _selectedSkills = [];
+  
+  // Contrôleurs pour les champs de formulaire
+  final TextEditingController _professionController = TextEditingController();
+  final TextEditingController _locationController = TextEditingController();
+  
+  // Méthode pour afficher la boîte de dialogue des filtres
+  Future<void> _showFilterDialog() async {
+    // Mettre à jour les contrôleurs avec les valeurs actuelles
+    _professionController.text = _selectedProfession;
+    _locationController.text = _location;
+    
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text('Filtres avancés', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Métier', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _professionController,
+                      decoration: InputDecoration(
+                        hintText: 'Ex: Plombier, Électricien',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Localisation', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _locationController,
+                      decoration: InputDecoration(
+                        hintText: 'Ville ou adresse',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.my_location, size: 20),
+                          onPressed: () {
+                            // TODO: Implémenter la détection de la position actuelle
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Fonctionnalité de géolocalisation à venir')),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Note minimale: ${_minRating.toInt()}', 
+                         style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+                    Slider(
+                      value: _minRating,
+                      min: 0,
+                      max: 5,
+                      divisions: 5,
+                      label: _minRating == 0 ? 'Toutes notes' : _minRating.toStringAsFixed(1),
+                      onChanged: (value) {
+                        setState(() {
+                          _minRating = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: _availableNow,
+                          onChanged: (value) {
+                            setState(() {
+                              _availableNow = value ?? false;
+                            });
+                          },
+                          activeColor: const Color(0xFFFFCC00),
+                        ),
+                        Text('Disponible maintenant', 
+                             style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: Text('ANNULER', style: GoogleFonts.poppins(color: Colors.grey[700])),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _selectedProfession = _professionController.text.trim();
+                      _location = _locationController.text.trim();
+                    });
+                    Navigator.of(context).pop();
+                    _applyFilters();
+                  },
+                  child: Text('APPLIQUER', style: GoogleFonts.poppins(color: const Color(0xFFFFCC00), fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
     _scrollController.dispose();
+    _professionController.dispose();
+    _locationController.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent &&
-        !_isLoading &&
-        _hasMore) {
+    if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent && !_isLoading && _hasMore) {
       _loadMoreProfessionals();
     }
   }
@@ -352,7 +484,7 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
       });
     }
 
-    if (_isLoading || !_hasMore) return;
+    if (_isLoading) return;
 
     setState(() {
       _isLoading = true;
@@ -363,7 +495,7 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
       String? token = widget.token;
       if (token == null || token.isEmpty) {
         final prefs = await SharedPreferences.getInstance();
-        token = prefs.getString('token'); // ← Utiliser 'token' au lieu de 'access_token'
+        token = prefs.getString('token');
       }
 
       if (token == null || token.isEmpty) {
@@ -373,69 +505,109 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
         );
         return;
       }
-      
+
+      // Préparer les paramètres de requête selon la documentation
       final params = <String, String>{
         'page': _currentPage.toString(),
         'per_page': _perPage.toString(),
-        if (_searchController.text.isNotEmpty) 'search': _searchController.text,
-        if (_selectedProfession.isNotEmpty) 'profession': _selectedProfession,
-        if (_location.isNotEmpty) 'location': _location,
-        if (_minRating > 0) 'min_rating': _minRating.toString(),
-        'available_now': _availableNow.toString(),
-        'sort_by': _sortBy,
+        // Recherche par nom d'entreprise
+        if (_searchController.text.isNotEmpty) 'company_name': _searchController.text.trim(),
+        // Recherche par métier (si pas de recherche par nom d'entreprise)
+        if (_selectedProfession.isNotEmpty && _searchController.text.isEmpty) 'job_title': _selectedProfession.trim(),
+        // Filtre par compétence (si spécifié)
+        if (_selectedSkill.isNotEmpty) 'skill': _selectedSkill.trim(),
+        // Filtre par note minimale
+        if (_minRating > 0) 'min_rating': _minRating.toStringAsFixed(1),
+        // Filtre par disponibilité
+        if (_availableNow) 'is_available': 'true',
       };
+
+      // Gestion de la localisation (ville/adresse ou coordonnées GPS)
+      if (_location.isNotEmpty) {
+        // Si la localisation est au format "latitude,longitude" -> recherche par proximité
+        if (_location.contains(',')) {
+          try {
+            final coords = _location.split(',');
+            if (coords.length == 2) {
+              final lat = double.tryParse(coords[0].trim());
+              final lng = double.tryParse(coords[1].trim());
+              
+              if (lat != null && lng != null) {
+                // On utilise les paramètres de géolocalisation
+                params.addAll({
+                  'latitude': lat.toString(),
+                  'longitude': lng.toString(),
+                  'radius': _searchRadius.toString(), // Rayon de recherche en km
+                });
+              }
+            }
+          } catch (e) {
+            print('Erreur lors du traitement des coordonnées GPS: $e');
+          }
+        } else {
+          // Sinon, recherche par ville/adresse
+          params['location'] = _location.trim();
+        }
+      }
+
+      // Nettoyer les paramètres vides
+      params.removeWhere((key, value) => value.isEmpty);
 
       print('Envoi de la requête avec les paramètres: $params');
 
-      final data = await ApiService.get('professionals', queryParams: params);
+      // Déterminer l'endpoint à utiliser en fonction des paramètres
+      final bool useNearbySearch = params.containsKey('latitude') && 
+                                 params.containsKey('longitude');
+      final String endpoint = useNearbySearch ? 'professionals/nearby' : 'professionals';
 
-      print('Données reçues: $data');
-      print('Type de data: ${data.runtimeType}');
+      print('Envoi de la requête vers $endpoint avec les paramètres: $params');
 
-      if (data != null) {
+      final response = await ApiService.get(endpoint, queryParams: params);
+
+      print('Réponse reçue: ${response != null ? 'données reçues' : 'null'}');
+
+      if (response != null) {
         // Gestion de la structure de réponse
-        final Map<String, dynamic> responseData = data is Map<String, dynamic> ? data : {};
-        final Map<String, dynamic> professionalsData = responseData['data'] is Map<String, dynamic>
-            ? responseData['data'] as Map<String, dynamic>
-            : {};
+        final Map<String, dynamic> responseData = response is Map<String, dynamic> ? response : {};
 
-        final List<dynamic> professionalsJson = professionalsData['data'] ?? [];
+        // La structure de réponse peut varier selon l'endpoint
+        List<dynamic> professionalsJson = [];
+        Map<String, dynamic> meta = {};
 
-        print('Données reçues: ${professionalsJson.length} professionnels');
+        if (useNearbySearch) {
+          // Structure pour l'endpoint de proximité
+          professionalsJson = responseData['data'] ?? [];
+          meta = {
+            'current_page': _currentPage,
+            'last_page': _currentPage, // Pas de pagination pour les recherches par proximité
+          };
+        } else {
+          // Structure standard pour l'endpoint /professionals
+          final Map<String, dynamic> professionalsData = responseData['data'] is Map<String, dynamic> ? responseData['data'] as Map<String, dynamic> : {};
 
-        // Debug: Afficher les données du premier professionnel pour voir la structure
+          professionalsJson = professionalsData['data'] ?? [];
+          meta = professionalsData['meta'] ?? {};
+        }
+
+        print('${professionalsJson.length} professionnels reçus');
+        
+        // Log de débogage pour voir la structure des données
         if (professionalsJson.isNotEmpty) {
-          print('=== DEBUG PREMIER PROFESSIONNEL ===');
-          print('Premier professionnel brut: ${professionalsJson[0]}');
-
-          final firstPro = professionalsJson[0] as Map<String, dynamic>;
-          print('Champs disponibles: ${firstPro.keys.toList()}');
-          print('profile_photo présent: ${firstPro.containsKey('profile_photo')}');
-          if (firstPro.containsKey('profile_photo')) {
-            print('profile_photo value: ${firstPro['profile_photo']}');
-            print('profile_photo type: ${firstPro['profile_photo'].runtimeType}');
-          }
-          print('avatar_url présent: ${firstPro.containsKey('avatar_url')}');
-          if (firstPro.containsKey('avatar_url')) {
-            print('avatar_url value: ${firstPro['avatar_url']}');
+          print('=== STRUCTURE DU PREMIER PROFESSIONNEL ===');
+          print(professionalsJson.first);
+          if (professionalsJson.first is Map) {
+            print('Type de profile_photo: ${(professionalsJson.first as Map)['profile_photo']?.runtimeType}');
           }
         }
 
         setState(() {
           if (reset) {
-            _professionals = professionalsJson
-                .map<Professional>((json) => Professional.fromJson(json))
-                .toList();
+            _professionals = professionalsJson.map<Professional>((json) => Professional.fromJson(json)).toList();
           } else {
-            _professionals.addAll(
-              professionalsJson
-                  .map<Professional>((json) => Professional.fromJson(json))
-                  .toList(),
-            );
+            _professionals.addAll(professionalsJson.map<Professional>((json) => Professional.fromJson(json)).toList());
           }
 
-          // Gestion de la pagination avec la nouvelle structure
-          final Map<String, dynamic> meta = professionalsData['meta'] ?? {};
+          // Gestion de la pagination
           _hasMore = (meta['current_page'] ?? 0) < (meta['last_page'] ?? 0);
           _isLoading = false;
         });
@@ -443,8 +615,8 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Erreur lors du chargement des professionnels'),
-            duration: Duration(seconds: 5),
+            content: Text('Aucun professionnel trouvé avec ces critères'),
+            duration: Duration(seconds: 3),
           ),
         );
       }
@@ -454,8 +626,9 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erreur: ${e.toString()}'),
+          content: Text('Erreur lors de la recherche: ${e.toString()}'),
           duration: const Duration(seconds: 5),
+          backgroundColor: Colors.red,
         ),
       );
     }
@@ -470,9 +643,28 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
     }
   }
 
-  // Méthode conservée pour compatibilité future
-  void _resetFilters() {
-    // Implémentation vide car non utilisée dans la nouvelle interface
+  // Appliquer les filtres et relancer la recherche
+  void _applyFilters() {
+    // Réinitialiser la pagination et recharger les professionnels
+    _loadProfessionals(reset: true);
+  }
+
+  // Méthode pour réinitialiser tous les filtres
+  void _resetAllFilters() {
+    setState(() {
+      _selectedProfession = '';
+      _location = '';
+      _selectedSkill = '';
+      _minRating = 0.0;
+      _availableNow = false;
+      _searchRadius = 10;
+      _selectedSkills.clear();
+      _searchController.clear();
+      _professionController.clear();
+      _locationController.clear();
+    });
+
+    _loadProfessionals(reset: true);
   }
 
   Future<void> _toggleFavorite(Professional professional) async {
@@ -532,37 +724,97 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
     }
   }
 
-  // Méthode conservée pour compatibilité future
-  void _applyFilters() {
-    _loadProfessionals(reset: true);
-  }
+  // Widget pour afficher les filtres actifs
+  Widget _buildActiveFilters() {
+    final List<Widget> filters = [];
 
-  // Widget pour les puces de filtre
-  Widget _buildFilterChip(String label, {bool isSelected = false}) {
-    return GestureDetector(
-      onTap: () {
-        // Logique de filtrage simplifiée
+    if (_selectedProfession.isNotEmpty) {
+      filters.add(_buildFilterChip('Métier: $_selectedProfession', onDelete: () {
         setState(() {
-          // Mettre à jour l'état du filtre sélectionné
+          _selectedProfession = '';
+          _professionController.clear();
+          _applyFilters();
         });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        margin: const EdgeInsets.only(right: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFFFCC00) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? const Color(0xFFFFCC00) : Colors.grey[300]!,
+      }));
+    }
+
+    if (_location.isNotEmpty) {
+      filters.add(_buildFilterChip('Lieu: $_location', onDelete: () {
+        setState(() {
+          _location = '';
+          _locationController.clear();
+          _applyFilters();
+        });
+      }));
+    }
+
+    if (_minRating > 0) {
+      filters.add(_buildFilterChip('Note: ${_minRating.toStringAsFixed(1)}+', onDelete: () {
+        setState(() {
+          _minRating = 0;
+          _applyFilters();
+        });
+      }));
+    }
+
+    if (_availableNow) {
+      filters.add(_buildFilterChip('Disponible', onDelete: () {
+        setState(() {
+          _availableNow = false;
+          _applyFilters();
+        });
+      }));
+    }
+
+    if (filters.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Filtres actifs', style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[700],
+              )),
+              TextButton(
+                onPressed: _resetAllFilters,
+                child: Text('Tout effacer', style: GoogleFonts.poppins(
+                  color: Colors.red,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                )),
+              ),
+            ],
           ),
         ),
-        child: Text(
-          label,
-          style: GoogleFonts.poppins(
-            color: isSelected ? Colors.white : Colors.grey[800],
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-            fontSize: 14,
-          ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12.0),
+          child: Row(children: filters),
+        ),
+      ],
+    );
+  }
+
+  // Widget pour les puces de filtre avec bouton de suppression
+  Widget _buildFilterChip(String label, {required VoidCallback onDelete}) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 4.0),
+      child: Chip(
+        label: Text(label, style: GoogleFonts.poppins(fontSize: 13)),
+        backgroundColor: Colors.white,
+        deleteIcon: const Icon(Icons.close, size: 16),
+        onDeleted: onDelete,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: Colors.grey[300]!),
         ),
       ),
     );
@@ -584,10 +836,19 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.filter_list),
+            onPressed: _showFilterDialog,
+            tooltip: 'Filtres avancés',
+          ),
+        ],
       ),
       body: Column(
         children: [
-          // Barre de recherche et filtres
+          // Affichage des filtres actifs
+          _buildActiveFilters(),
+          // Barre de recherche
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -650,10 +911,34 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      _buildFilterChip('Tous', isSelected: true),
-                      _buildFilterChip('Disponible'),
-                      _buildFilterChip('Proche de vous'),
-                      _buildFilterChip('Mieux notés'),
+                      _buildFilterChip('Tous', onDelete: () {
+                        setState(() {
+                          _selectedProfession = '';
+                          _location = '';
+                          _minRating = 0;
+                          _availableNow = false;
+                          _searchController.clear();
+                          _applyFilters();
+                        });
+                      }),
+                      _buildFilterChip('Disponible', onDelete: () {
+                        setState(() {
+                          _availableNow = !_availableNow;
+                          _applyFilters();
+                        });
+                      }),
+                      _buildFilterChip('Proche de vous', onDelete: () {
+                        // Implémenter la logique de géolocalisation ici
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Fonctionnalité de géolocalisation à venir')),
+                        );
+                      }),
+                      _buildFilterChip('4 étoiles +', onDelete: () {
+                        setState(() {
+                          _minRating = 4.0;
+                          _applyFilters();
+                        });
+                      }),
                     ],
                   ),
                 ),
@@ -666,34 +951,65 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: _isRoleDetectionComplete && !_isProClient
-          ? BottomNavigationBar(
-              currentIndex: _selectedIndex,
-              onTap: _onItemTapped,
-              type: BottomNavigationBarType.fixed,
-              backgroundColor: const Color(0xFFFFFFFF),
-              selectedItemColor: const Color(0xFFFFCC00),
-              unselectedItemColor: Colors.grey,
-              items: const [
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.home_outlined),
-                  label: 'Accueil',
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: 1,
+        onTap: (index) {
+          if (index == 0) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ClientDashboardScreen(
+                  token: widget.token ?? '',
+                  userData: widget.userData ?? <String, dynamic>{},
+                  profile: {},
                 ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.search),
-                  label: 'Recherche',
+              ),
+            );
+          } else if (index == 2) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ClientCompletedQuotationsScreen(
+                  token: widget.token ?? '',
+                  userData: widget.userData ?? <String, dynamic>{},
                 ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.receipt_long_outlined),
-                  label: 'Devis',
+              ),
+            );
+          } else if (index == 3) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ClientProfileScreen(
+                  token: widget.token ?? '',
+                  userData: widget.userData ?? <String, dynamic>{},
                 ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.person_outline),
-                  label: 'Profil',
-                ),
-              ],
-            )
-          : null, // Cacher la barre de navigation pour les pros et pendant la détection du rôle
+              ),
+            );
+          }
+        },
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: const Color(0xFFFFFFFF),
+        selectedItemColor: const Color(0xFFFFCC00),
+        unselectedItemColor: Colors.grey,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_outlined),
+            label: 'Accueil',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.search),
+            label: 'Recherche',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.receipt_long_outlined),
+            label: 'Devis',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline),
+            label: 'Profil',
+          ),
+        ],
+      ),
     );
   }
 
@@ -849,8 +1165,11 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              // Afficher le nom de l'entreprise s'il existe, sinon le nom du professionnel
                               Text(
-                                professional.displayName,
+                                professional.companyName?.isNotEmpty == true 
+                                    ? professional.companyName!
+                                    : '${professional.firstName} ${professional.lastName}'.trim(),
                                 style: GoogleFonts.poppins(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 16,
@@ -860,8 +1179,12 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 2),
+                              // Afficher le métier et la ville si disponible
                               Text(
-                                professional.profession,
+                                [
+                                  professional.jobTitle.isNotEmpty ? professional.jobTitle : professional.profession,
+                                  if (professional.city?.isNotEmpty == true) professional.city!,
+                                ].join(' • '),
                                 style: GoogleFonts.poppins(
                                   color: Colors.grey[600],
                                   fontSize: 13,
@@ -887,7 +1210,6 @@ class _ProfessionalSearchScreenState extends State<ProfessionalSearchScreen> {
                         ),
                       ],
                     ),
-                    
                     // Note et avis
                     Row(
                       children: [

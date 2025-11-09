@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../services/api_service.dart';
+import '../../services/document_service.dart';
 import '../../core/app_config.dart';
 import 'portfolio_management_screen.dart';
 import 'business_hours_edit_screen.dart';
 import 'professional_profile_edit_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ProfessionalSettingsScreen extends StatefulWidget {
   final String token;
@@ -22,56 +24,86 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
   bool _isLoading = true;
   String _error = '';
 
-  /// Transforme les données du profil pour inclure l'URL complète de la photo de profil
+  /// Transforme les données du profil pour inclure l'URL complète ou les données base64 de la photo de profil
   Map<String, dynamic> _transformProfileData(Map<String, dynamic> profileData) {
     print('=== DEBUG TRANSFORM PROFILE DATA ===');
     print('Données reçues dans _transformProfileData: $profileData');
 
-    // Construire l'URL complète de la photo de profil
+    // Variables pour stocker l'URL ou les données base64 de la photo
     String? fullPhotoUrl;
+    String? base64Image;
 
-    // Nouvelle structure: profile_photo est un objet avec url
-    if (profileData['profile_photo'] != null && profileData['profile_photo'] is Map) {
-      final profilePhoto = profileData['profile_photo'] as Map<String, dynamic>;
-      print('=== DEBUG PROFILE PHOTO ===');
-      print('profile_photo reçu: $profilePhoto');
-      print('URL reçue: ${profilePhoto['url']}');
-      print('Path reçu: ${profilePhoto['path']}');
-      print('Type reçu: ${profilePhoto['type']}');
+    // Vérifier si on a une image en base64
+    if (profileData['profile_photo_base64'] != null) {
+      print('=== DÉTECTION D\'UNE IMAGE BASE64 ===');
+      final photoData = profileData['profile_photo_base64'];
+      
+      // Vérifier si c'est une chaîne base64 ou un objet avec une propriété 'data'
+      if (photoData is String) {
+        base64Image = photoData.startsWith('data:image/') 
+            ? photoData 
+            : 'data:image/jpeg;base64,$photoData';
+      } else if (photoData is Map && photoData['data'] != null) {
+        base64Image = photoData['data'].toString().startsWith('data:image/')
+            ? photoData['data']
+            : 'data:image/jpeg;base64,${photoData['data']}';
+      }
+      
+      print('Image base64 détectée, longueur: ${base64Image?.length ?? 0} caractères');
+    }
+    
+    // Si pas d'image en base64, essayer de récupérer l'URL de l'image
+    if (base64Image == null) {
+      // Nouvelle structure: profile_photo est un objet avec url
+      if (profileData['profile_photo'] != null && profileData['profile_photo'] is Map) {
+        final profilePhoto = profileData['profile_photo'] as Map<String, dynamic>;
+        print('=== DEBUG PROFILE PHOTO ===');
+        print('profile_photo reçu: $profilePhoto');
+        print('URL reçue: ${profilePhoto['url']}');
+        print('Path reçu: ${profilePhoto['path']}');
+        print('Type reçu: ${profilePhoto['type']}');
 
-      if (profilePhoto['url'] != null && profilePhoto['url'].toString().isNotEmpty) {
-        final url = profilePhoto['url'].toString();
-        print('URL à traiter: $url');
+        if (profilePhoto['url'] != null && profilePhoto['url'].toString().isNotEmpty) {
+          final url = profilePhoto['url'].toString();
+          print('URL à traiter: $url');
 
-        // Vérifier si c'est une URL complète
-        if (url.startsWith('http://') || url.startsWith('https://')) {
-          print('URL complète détectée');
-          // URL complète - vérifier que ce n'est pas un placeholder
-          if (url != 'https://via.placeholder.com/150' && !url.contains('placeholder')) {
-            print('URL valide trouvée: $url');
-            fullPhotoUrl = url;
+          // Vérifier si c'est une URL complète
+          if (url.startsWith('http://') || url.startsWith('https://')) {
+            print('URL complète détectée');
+            // URL complète - vérifier que ce n'est pas un placeholder
+            if (url != 'https://via.placeholder.com/150' && !url.contains('placeholder')) {
+              print('URL valide trouvée: $url');
+              fullPhotoUrl = url;
+            } else {
+              print('URL de placeholder ignorée');
+            }
           } else {
-            print('URL de placeholder ignorée');
+            print('URL relative détectée, construction de l\'URL complète');
+            // Nettoyer l'URL pour éviter les doublons de /storage/
+            String cleanUrl = url.startsWith('/storage/') ? url.substring(8) : url;
+            // Construire l'URL complète
+            fullPhotoUrl = AppConfig.buildMediaUrl(cleanUrl);
+            print('URL nettoyée: $cleanUrl');
+            print('URL construite: $fullPhotoUrl');
           }
         } else {
-          print('URL relative détectée, construction de l\'URL complète');
-          // URL relative - construire l'URL complète
-          fullPhotoUrl = AppConfig.buildMediaUrl(url);
-          print('URL construite: $fullPhotoUrl');
+          print('Aucune URL trouvée dans profile_photo');
         }
-      } else {
-        print('Aucune URL trouvée dans profile_photo');
+      }
+
+      // Fallback: Ancienne structure avec profile_photo_path
+      if (fullPhotoUrl == null && profileData['profile_photo_path'] != null && profileData['profile_photo_path'].toString().isNotEmpty) {
+        fullPhotoUrl = AppConfig.buildMediaUrl(profileData['profile_photo_path']);
       }
     }
 
-    // Fallback: Ancienne structure avec profile_photo_path
-    if (fullPhotoUrl == null && profileData['profile_photo_path'] != null && profileData['profile_photo_path'].toString().isNotEmpty) {
-      fullPhotoUrl = AppConfig.buildMediaUrl(profileData['profile_photo_path']);
-    }
-
-    // Créer une copie des données avec l'URL complète
+    // Créer une copie des données avec l'URL ou les données base64
     Map<String, dynamic> transformedData = Map<String, dynamic>.from(profileData);
-    transformedData['profile_photo_url'] = fullPhotoUrl;
+    if (base64Image != null) {
+      transformedData['profile_photo_base64'] = base64Image;
+    } else {
+      transformedData['profile_photo_url'] = fullPhotoUrl;
+    }
 
     // Debug spécifique pour business_hours
     print('business_hours AVANT transformation: ${transformedData['business_hours']}');
@@ -98,7 +130,7 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
       });
 
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token') ?? widget.token;
+      final token = prefs.getString('token') ?? widget.token;
 
       print('=== DEBUG - Récupération du profil professionnel ===');
       print('Token: ${token.substring(0, 20)}...');
@@ -421,6 +453,15 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
     );
   }
 
+  // Méthode utilitaire pour afficher l'avatar par défaut
+  Widget _buildDefaultAvatar() {
+    return const Icon(
+      Icons.business,
+      color: Color(0xFFFFCC00),
+      size: 40,
+    );
+  }
+
   Widget _buildProfileHeader() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -452,21 +493,30 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
                 width: 3,
               ),
             ),
-            child: _profile['profile_photo_url'] != null && _profile['profile_photo_url'].toString().isNotEmpty
+            child: _profile['profile_photo_base64'] != null
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(37),
-                    child: Image.network(
-                      _profile['profile_photo_url'],
+                    child: Image.memory(
+                      base64Decode(_profile['profile_photo_base64'].toString().split(',').last),
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) {
-                        return const Icon(
-                          Icons.business,
-                          color: Color(0xFFFFCC00),
-                          size: 40,
-                        );
+                        print('Erreur de chargement de l\'image base64: $error');
+                        return _buildDefaultAvatar();
                       },
                     ),
                   )
+                : _profile['profile_photo_url'] != null && _profile['profile_photo_url'].toString().isNotEmpty
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(37),
+                        child: Image.network(
+                          _profile['profile_photo_url'],
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            print('Erreur de chargement de l\'URL: ${_profile['profile_photo_url']}');
+                            return _buildDefaultAvatar();
+                          },
+                        ),
+                      )
                 : const Icon(
                     Icons.business,
                     color: Color(0xFFFFCC00),
@@ -710,17 +760,20 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              'Horaires de disponibilité',
-              style: GoogleFonts.poppins(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
+            Expanded(
+              child: Text(
+                'Horaires de disponibilité',
+                style: GoogleFonts.poppins(
+                  fontSize: 18, // Taille de police réduite
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+                overflow: TextOverflow.ellipsis, // Ajout d'une ellipse si le texte est trop long
               ),
             ),
-            TextButton.icon(
+            const SizedBox(width: 8), // Espacement entre le texte et le bouton
+            TextButton(
               onPressed: () async {
                 final result = await Navigator.push(
                   context,
@@ -737,10 +790,19 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
                   await _loadProfessionalProfile();
                 }
               },
-              icon: const Icon(Icons.edit, size: 16),
-              label: const Text('Modifier'),
               style: TextButton.styleFrom(
                 foregroundColor: const Color(0xFFFFCC00),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), // Padding réduit
+                minimumSize: const Size(0, 36), // Taille minimale réduite
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.edit, size: 16),
+                  SizedBox(width: 4),
+                  Text('Modifier', style: TextStyle(fontSize: 14)),
+                ],
               ),
             ),
           ],
@@ -957,6 +1019,24 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
   }
 
   Widget _buildDocumentItem(IconData icon, String title, String status, bool isUploaded) {
+    // Try to find a document path/url depending on the kind of document
+    String? docPath;
+    String? docUrl;
+
+    // Known key for identity document
+    if (title.toLowerCase().contains('identité')) {
+      docPath = _profile['id_document_path']?.toString();
+      docUrl = _profile['id_document_url']?.toString();
+    }
+
+    // If path exists but not a full url, build it
+    String? builtUrl;
+    if (docUrl != null && docUrl.isNotEmpty) {
+      builtUrl = docUrl;
+    } else if (docPath != null && docPath.isNotEmpty) {
+      builtUrl = docPath.startsWith('http') ? docPath : AppConfig.buildMediaUrl(docPath);
+    }
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -995,11 +1075,81 @@ class _ProfessionalSettingsScreenState extends State<ProfessionalSettingsScreen>
               ],
             ),
           ),
-          Icon(
-            isUploaded ? Icons.check_circle : Icons.warning,
-            color: isUploaded ? Colors.green[600] : Colors.orange[600],
-            size: 20,
-          ),
+          if (isUploaded)
+            PopupMenuButton<String>(
+              onSelected: (value) async {
+                if (value == 'open') {
+                  if (builtUrl != null && builtUrl.isNotEmpty) {
+                    final uri = Uri.tryParse(builtUrl);
+                    if (uri != null) {
+                      // Try to open externally
+                      try {
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Impossible d\'ouvrir le document')), 
+                          );
+                        }
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Erreur lors de l\'ouverture: $e')),
+                        );
+                      }
+                    }
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Aucun document disponible à ouvrir')),
+                    );
+                  }
+                } else if (value == 'delete') {
+                  // Confirm
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: Text('Supprimer le document', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                      content: Text('Voulez-vous vraiment supprimer ce document ?', style: GoogleFonts.poppins()),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.of(context).pop(false), child: Text('Annuler', style: GoogleFonts.poppins())),
+                        TextButton(onPressed: () => Navigator.of(context).pop(true), child: Text('Supprimer', style: GoogleFonts.poppins(color: Colors.red))),
+                      ],
+                    ),
+                  );
+
+                  if (confirmed == true) {
+                    try {
+                      final pathToDelete = docPath ?? '';
+                      if (pathToDelete.isEmpty) throw Exception('Aucun chemin de document trouvé');
+                      final service = DocumentService(widget.token);
+                      final res = await service.deleteDocument(pathToDelete);
+                      if (res) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Document supprimé')));
+                        setState(() {
+                          // Remove from local profile map
+                          if (title.toLowerCase().contains('identité')) {
+                            _profile.remove('id_document_path');
+                            _profile.remove('id_document_url');
+                          }
+                        });
+                      }
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur suppression: $e')));
+                    }
+                  }
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'open', child: Text('Ouvrir')),
+                const PopupMenuItem(value: 'delete', child: Text('Supprimer', style: TextStyle(color: Colors.red))),
+              ],
+              icon: Icon(Icons.more_vert, color: isUploaded ? Colors.green[600] : Colors.orange[600]),
+            )
+          else
+            Icon(
+              isUploaded ? Icons.check_circle : Icons.warning,
+              color: isUploaded ? Colors.green[600] : Colors.orange[600],
+              size: 20,
+            ),
         ],
       ),
     );

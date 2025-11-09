@@ -1,265 +1,312 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-
-class Document {
-  final String id;
-  final String name;
-  final String url;
-  final String type;
-  final DateTime uploadedAt;
-
-  Document({
-    required this.id,
-    required this.name,
-    required this.url,
-    required this.type,
-    required this.uploadedAt,
-  });
-
-  factory Document.fromJson(Map<String, dynamic> json) {
-    return Document(
-      id: json['id'],
-      name: json['name'],
-      url: json['url'],
-      type: json['type'],
-      uploadedAt: DateTime.parse(json['uploaded_at']),
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'url': url,
-      'type': type,
-      'uploaded_at': uploadedAt.toIso8601String(),
-    };
-  }
-}
+import '../../models/document.dart';
+import '../../services/document_service.dart';
 
 class DocumentsScreen extends StatefulWidget {
   final List<Document> initialDocuments;
-  final Function(List<Document>) onSave;
+  final Function(List<Document>) onDocumentsUpdated;
+  final String token;
 
   const DocumentsScreen({
     Key? key,
     required this.initialDocuments,
-    required this.onSave,
+    required this.onDocumentsUpdated,
+    required this.token,
   }) : super(key: key);
 
   @override
-  _DocumentsScreenState createState() => _DocumentsScreenState();
+  State<DocumentsScreen> createState() => _DocumentsScreenState();
 }
 
 class _DocumentsScreenState extends State<DocumentsScreen> {
   late List<Document> _documents;
-  final List<PlatformFile> _selectedDocuments = [];
-  bool _isUploading = false;
+  final Map<String, PlatformFile> _selectedDocuments = {};
+  bool _isLoading = false;
+  late DocumentService _documentService;
 
   @override
   void initState() {
     super.initState();
-    _documents = List.from(widget.initialDocuments);
+    _documentService = DocumentService(widget.token);
+    _initializeDocuments();
+  }
+
+  void _initializeDocuments() {
+    _documents = List<Document>.from(widget.initialDocuments);
+  }
+
+  Future<void> _saveDocuments() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final List<Document> updatedDocuments = [];
+      final List<Document> deletedDocuments = [];
+
+      for (var doc in _documents) {
+        if (_selectedDocuments.containsKey(doc.type)) {
+          try {
+            final file = _selectedDocuments[doc.type]!;
+            final uploadedDoc = await _documentService.uploadDocument(
+              File(file.path!),
+              doc.type,
+              documentId: doc.id,
+            );
+            updatedDocuments.add(uploadedDoc);
+
+            if (doc.filePath.isNotEmpty) {
+              deletedDocuments.add(doc);
+            }
+          } catch (e) {
+            _showError('Erreur lors du téléversement de ${doc.name}: $e');
+          }
+        } else if (doc.filePath.isNotEmpty) {
+          updatedDocuments.add(doc);
+        }
+      }
+
+      await _documentService.updateProfileDocuments(updatedDocuments, deletedDocuments);
+      widget.onDocumentsUpdated(updatedDocuments);
+      _showSuccess('Documents sauvegardés avec succès');
+      
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      _showError('Erreur lors de la sauvegarde: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _pickDocument(String documentType) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        setState(() {
+          _selectedDocuments[documentType] = result.files.first;
+        });
+        await _uploadDocument(documentType);
+      }
+    } catch (e) {
+      _showError('Erreur lors de la sélection du fichier: $e');
+    }
+  }
+
+  Future<void> _uploadDocument(String documentType) async {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final file = _selectedDocuments[documentType]!;
+      final filePath = file.path!;
+      final fileSize = await File(filePath).length();
+      const maxSize = 10 * 1024 * 1024; // 10MB
+
+      if (fileSize > maxSize) {
+        throw Exception('Le fichier est trop volumineux (max 10 Mo)');
+      }
+
+      final uploadedDoc = await _documentService.uploadDocument(
+        File(filePath),
+        documentType,
+      );
+
+      setState(() {
+        _documents.removeWhere((doc) => doc.type == documentType);
+        _documents.add(uploadedDoc);
+        _selectedDocuments.remove(documentType);
+      });
+
+      widget.onDocumentsUpdated(_documents);
+      _showSuccess('Document ajouté avec succès');
+
+    } catch (e) {
+      // Log and show a detailed error dialog so user can copy the server response
+      debugPrint('Upload error: $e');
+  final message = e.toString();
+      // Show a short snack
+      _showError('Erreur lors de l\'ajout du document: ${message.split('\n').first}');
+      // And a dialog with the full message for debugging/copy
+      if (mounted) {
+        showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Erreur lors du téléversement'),
+            content: SingleChildScrollView(
+              child: Text(message),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Fermer'),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _deleteDocument(String documentId) async {
+    final docToDelete = _documents.firstWhere(
+      (doc) => doc.id == documentId,
+      orElse: () => Document(
+        id: '',
+        name: '',
+        url: '',
+        type: '',
+        uploadedAt: DateTime.now(),
+        filePath: '',
+      ),
+    );
+
+    if (docToDelete.id.isEmpty) {
+      _showError('Document non trouvé');
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmer la suppression'),
+        content: const Text('Voulez-vous vraiment supprimer ce document ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Supprimer'),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        if (docToDelete.filePath.isNotEmpty) {
+          await _documentService.deleteDocument(docToDelete.filePath);
+        }
+
+        setState(() {
+          _documents.removeWhere((doc) => doc.id == documentId);
+        });
+
+        widget.onDocumentsUpdated(_documents);
+        _showSuccess('Document supprimé avec succès');
+      } catch (e) {
+        _showError('Erreur lors de la suppression: $e');
+      }
+    }
+  }
+
+  void _showError(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showSuccess(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Documents professionnels'),
+        title: const Text('Documents'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: () {
-              widget.onSave(_documents);
-              Navigator.pop(context);
-            },
-          ),
+          if (_selectedDocuments.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.save),
+              onPressed: _saveDocuments,
+            ),
         ],
       ),
-      body: _isUploading
+      body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _buildContent(),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _pickDocuments,
-        child: const Icon(Icons.upload_file),
-      ),
-    );
-  }
-
-  Widget _buildContent() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Documents sélectionnés
-          if (_selectedDocuments.isNotEmpty) ...[
-            const Text(
-              'Nouveaux documents à téléverser:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            ..._selectedDocuments.asMap().entries.map((entry) {
-              final index = entry.key;
-              final doc = entry.value;
-              return Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                child: ListTile(
-                  leading: const Icon(Icons.insert_drive_file),
-                  title: Text(doc.name),
-                  subtitle: Text('${(doc.size / 1024).toStringAsFixed(2)} KB'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () => _removeDocument(index),
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _documents.length,
+              itemBuilder: (context, index) {
+                final doc = _documents[index];
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          doc.name,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text('Type: ${doc.type}'),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton.icon(
+                              onPressed: () => _pickDocument(doc.type),
+                              icon: const Icon(Icons.upload_file),
+                              label: const Text('Mettre à jour'),
+                            ),
+                            if (doc.filePath.isNotEmpty)
+                              TextButton.icon(
+                                onPressed: () => _deleteDocument(doc.id),
+                                icon: const Icon(Icons.delete),
+                                label: const Text('Supprimer'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.red,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            }).toList(),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _uploadDocuments,
-              child: const Text('Téléverser les documents'),
+                );
+              },
             ),
-            const Divider(height: 40),
-          ],
-
-          // Documents existants
-          if (_documents.isNotEmpty) ...[
-            const Text(
-              'Documents existants:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            ..._documents.map((doc) => Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                leading: _getDocumentIcon(doc.type),
-                title: Text(doc.name),
-                subtitle: Text('Ajouté le ${_formatDate(doc.uploadedAt)}'),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
-                  onPressed: () => _deleteDocument(doc.id),
-                ),
-                onTap: () {
-                  // TODO: Afficher le document
-                },
-              ),
-            )).toList(),
-          ] else ...[
-            const Center(
-              child: Text('Aucun document pour le moment'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _getDocumentIcon(String type) {
-    if (type.contains('pdf')) {
-      return const Icon(Icons.picture_as_pdf, color: Colors.red);
-    } else if (type.contains('image')) {
-      return const Icon(Icons.image, color: Colors.blue);
-    } else if (type.contains('word') || type.contains('document')) {
-      return const Icon(Icons.description, color: Colors.blue);
-    }
-    return const Icon(Icons.insert_drive_file);
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
-  }
-
-  Future<void> _pickDocuments() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'],
-        allowMultiple: true,
-      );
-
-      if (result != null) {
-        setState(() {
-          _selectedDocuments.addAll(result.files);
-        });
-      }
-    } catch (e) {
-      _showError('Erreur lors de la sélection des documents: $e');
-    }
-  }
-
-  void _removeDocument(int index) {
-    setState(() {
-      _selectedDocuments.removeAt(index);
-    });
-  }
-
-  Future<void> _uploadDocuments() async {
-    if (_selectedDocuments.isEmpty) return;
-
-    setState(() {
-      _isUploading = true;
-    });
-
-    try {
-      // TODO: Implémenter l'upload des documents vers le serveur
-      // Pour chaque document dans _selectedDocuments, envoyer au serveur
-      // et ajouter le résultat à _documents
-      
-      // Simulation d'upload réussi
-      await Future.delayed(const Duration(seconds: 2));
-      
-      final newDocuments = _selectedDocuments.map((file) => Document(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        name: file.name,
-        url: 'https://example.com/documents/${file.name}',
-        type: file.extension ?? 'application/octet-stream',
-        uploadedAt: DateTime.now(),
-      )).toList();
-
-      setState(() {
-        _documents.addAll(newDocuments);
-        _selectedDocuments.clear();
-      });
-
-      _showSuccess('Documents téléchargés avec succès');
-    } catch (e) {
-      _showError('Erreur lors du téléchargement des documents: $e');
-    } finally {
-      setState(() {
-        _isUploading = false;
-      });
-    }
-  }
-
-  Future<void> _deleteDocument(String documentId) async {
-    try {
-      // TODO: Implémenter la suppression côté serveur
-      setState(() {
-        _documents.removeWhere((doc) => doc.id == documentId);
-      });
-      _showSuccess('Document supprimé avec succès');
-    } catch (e) {
-      _showError('Erreur lors de la suppression du document: $e');
-    }
-  }
-
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-
-  void _showSuccess(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-      ),
     );
   }
 }

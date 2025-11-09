@@ -35,7 +35,7 @@ class _ClientFavoritesScreenState extends State<ClientFavoritesScreen> {
   Future<void> _initializeData() async {
     // Récupérer le token depuis SharedPreferences comme secours
     final prefs = await SharedPreferences.getInstance();
-    final tokenFromPrefs = prefs.getString('access_token') ?? '';
+    final tokenFromPrefs = prefs.getString('token') ?? '';
 
     print('=== DEBUG INITIALIZATION ===');
     print('Token depuis widget: ${widget.token.isNotEmpty ? 'présent' : 'vide'}');

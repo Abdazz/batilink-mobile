@@ -803,70 +803,83 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
               bottom: BorderSide(color: Colors.grey[200]!, width: 1),
             ),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isSmallScreen = constraints.maxWidth < 350;
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Note moyenne',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Note moyenne',
+                          style: GoogleFonts.poppins(
+                            fontSize: isSmallScreen ? 14 : 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            RatingBarIndicator(
+                              rating: _professional?.rating ?? 0,
+                              itemBuilder: (context, _) => const Icon(
+                                Icons.star,
+                                color: Colors.amber,
+                              ),
+                              itemCount: 5,
+                              itemSize: isSmallScreen ? 16.0 : 20.0,
+                              direction: Axis.horizontal,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${_professional?.rating.toStringAsFixed(1) ?? '0.0'}/5',
+                              style: GoogleFonts.poppins(
+                                fontSize: isSmallScreen ? 14 : 16,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFFFFCC00),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          '${_professional?.reviewCount ?? 0} avis',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      RatingBarIndicator(
-                        rating: _professional?.rating ?? 0,
-                        itemBuilder: (context, _) => const Icon(
-                          Icons.star,
-                          color: Colors.amber,
-                        ),
-                        itemCount: 5,
-                        itemSize: 20.0,
-                        direction: Axis.horizontal,
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.rate_review, size: 16),
+                    label: Text(
+                      isSmallScreen ? 'Avis' : 'Donner mon avis',
+                      style: GoogleFonts.poppins(
+                        fontSize: isSmallScreen ? 12 : 14,
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${_professional?.rating.toStringAsFixed(1) ?? '0.0'}/5',
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFFFFCC00),
-                        ),
+                    ),
+                    onPressed: _showRatingDialog,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFCC00),
+                      foregroundColor: Colors.white,
+                      padding: isSmallScreen 
+                          ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
+                          : const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                    ],
-                  ),
-                  Text(
-                    '${_professional?.reviewCount ?? 0} avis',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: Colors.grey[600],
                     ),
                   ),
                 ],
-              ),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.rate_review, size: 16),
-                label: Text(
-                  'Donner mon avis',
-                  style: GoogleFonts.poppins(fontSize: 14),
-                ),
-                onPressed: _showRatingDialog,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFCC00),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-            ],
+              );
+            },
           ),
         ),
 
@@ -1268,7 +1281,6 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                         color: Colors.transparent,
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: List.generate(_tabs.length, (index) {
                             bool isSelected = _tabController.index == index;
                             return Expanded(
@@ -1277,11 +1289,11 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                                   _tabController.animateTo(index);
                                 },
                                 child: Container(
-                                  margin: const EdgeInsets.symmetric(horizontal: 1),
-                                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 2),
+                                  margin: const EdgeInsets.symmetric(horizontal: 0.5),
+                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
                                   decoration: BoxDecoration(
                                     color: isSelected ? const Color(0xFFFFCC00) : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(8),
+                                    borderRadius: BorderRadius.circular(6),
                                     border: Border.all(
                                       color: isSelected ? const Color(0xFFFFCC00) : Colors.grey[300]!,
                                       width: 1,
@@ -1296,20 +1308,25 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                                   ),
                                   child: Center(
                                     child: Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
                                         Icon(
                                           _tabs[index]['icon'],
-                                          size: 18,
+                                          size: 16,
                                           color: isSelected ? Colors.white : Colors.grey[600],
                                         ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          _tabs[index]['label'],
-                                          style: GoogleFonts.poppins(
-                                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                                            color: isSelected ? Colors.white : Colors.grey[700],
-                                            fontSize: 12,
+                                        const SizedBox(width: 4),
+                                        Flexible(
+                                          child: Text(
+                                            _tabs[index]['label'],
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 11,
+                                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                              color: isSelected ? Colors.white : Colors.grey[700],
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                       ],
@@ -1436,8 +1453,8 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
                       ),
                       child: Text(
                         _professional?.hourlyRate != null
-                            ? '${_professional!.hourlyRate.toStringAsFixed(0)} €/h'
-                            : '-- €/h',
+                            ? '${_professional!.hourlyRate.toStringAsFixed(0)} FCFA/Jour'
+                            : '-- FCFA/Jour',
                         style: GoogleFonts.poppins(
                           color: const Color(0xFFD7263D),
                           fontWeight: FontWeight.bold,
@@ -1455,7 +1472,7 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _buildStatItem(Icons.work, '${_professional?.experienceYears ?? 0} ans', 'Expérience'),
-              _buildStatItem(Icons.people_alt_rounded, '${_professional?.completedJobs ?? 0}', 'Clients'),
+              _buildStatItem(Icons.people_alt_rounded, '${_professional?.completedClientsCount ?? 0}', 'Clients'),
               _buildStatItem(Icons.star, '${_professional?.rating?.toStringAsFixed(1) ?? '--'}', 'Avis'),
             ],
           ),
@@ -1491,54 +1508,160 @@ class _ProfessionalDetailScreenState extends State<ProfessionalDetailScreen> wit
     );
   }
 
-  String _getImageUrl(Map<String, dynamic> item) {
-    // Essaie différentes clés possibles pour l'image
-    String? imageUrl = item['image_url'] ?? item['image'] ?? item['image_path'];
-
-    if (imageUrl != null && imageUrl.isNotEmpty) {
-      // Si l'URL ne commence pas par http, la compléter
-      if (!imageUrl.startsWith('http')) {
-        return AppConfig.buildMediaUrl(imageUrl);
+  String _getImageUrl(dynamic item) {
+    try {
+      if (item == null) {
+        print('Item is null');
+        return '';
       }
-      return imageUrl;
+
+      print('=== DEBUG PORTFOLIO ITEM ===');
+      
+      // Fonction pour nettoyer l'URL et corriger le double 'storage/'
+      String cleanUrl(String url) {
+        if (url.isEmpty) return '';
+        
+        // Supprimer les espaces et les caractères spéciaux indésirables
+        String cleanedUrl = url.trim();
+        
+        // Corriger le double 'storage/'
+        cleanedUrl = cleanedUrl.replaceAll(RegExp(r'/storage/(/storage/)+'), '/storage/');
+        
+        // S'assurer que l'URL commence par http ou https
+        if (!cleanedUrl.startsWith('http')) {
+          // Si l'URL commence par /storage/, on la combine avec l'URL de base
+          if (cleanedUrl.startsWith('/storage/')) {
+            cleanedUrl = '${AppConfig.baseUrl}${cleanedUrl}';
+          } else {
+            cleanedUrl = AppConfig.buildMediaUrl(cleanedUrl);
+          }
+        }
+        
+        // Nettoyer les doubles slashes sauf après http:
+        cleanedUrl = cleanedUrl.replaceAll(RegExp(r'(?<!http:|https:)/{2,}'), '/');
+        
+        print('Cleaned URL: $cleanedUrl');
+        return cleanedUrl;
+      }
+      
+      // Si l'item est une chaîne, on la traite directement comme une URL
+      if (item is String) {
+        return cleanUrl(item);
+      }
+      
+      // Si l'item est une Map, on cherche une URL d'image dans différentes clés possibles
+      if (item is Map) {
+        print('Item is Map, keys: ${item.keys.toList()}');
+        
+        // Vérifier si l'item contient une clé 'url' ou 'path' qui pourrait être une URL
+        if (item['url'] is String && item['url'].isNotEmpty) {
+          return cleanUrl(item['url'].toString());
+        }
+        
+        if (item['path'] is String && item['path'].isNotEmpty) {
+          return cleanUrl(item['path'].toString());
+        }
+        
+        // Essayer différentes clés possibles pour l'image
+        final possibleKeys = ['image_url', 'image', 'image_path'];
+        for (var key in possibleKeys) {
+          if (item[key] is String && item[key].toString().isNotEmpty) {
+            return cleanUrl(item[key].toString());
+          }
+        }
+      }
+      
+      print('No valid image URL found in item');
+      return '';
+    } catch (e) {
+      print('Error in _getImageUrl: $e');
+      return '';
     }
-    return '';
   }
 
-  Widget _buildPortfolioImage(Map<String, dynamic> item) {
-    final imageUrl = _getImageUrl(item);
-
+  Widget _buildPlaceholder(String message, {bool isError = false}) {
     return Container(
       decoration: BoxDecoration(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
         color: Colors.grey[200],
       ),
-      child: imageUrl.isNotEmpty
-          ? ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-              child: CachedNetworkImage(
-                imageUrl: imageUrl,
-                fit: BoxFit.cover,
-                placeholder: (context, url) => const Center(
-                  child: CircularProgressIndicator(),
-                ),
-                errorWidget: (context, url, error) {
-                  print('Erreur de chargement image: $url - $error');
-                  return const Center(
-                    child: Icon(Icons.broken_image, size: 40, color: Colors.grey),
-                  );
-                },
-              ),
-            )
-          : const Center(
-              child: Icon(Icons.photo, size: 40, color: Colors.grey),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isError ? Icons.error_outline : Icons.photo,
+              size: 40,
+              color: isError ? Colors.red : Colors.grey,
             ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: TextStyle(
+                fontSize: 12,
+                color: isError ? Colors.red : Colors.grey,
+              ),
+              textAlign: TextAlign.center,
+            )
+          ],
+        ),
+      ),
     );
+  }
+
+  Widget _buildPortfolioImage(Map<String, dynamic> item) {
+    try {
+      final imageUrl = _getImageUrl(item);
+      print('Building portfolio image with URL: $imageUrl');
+
+      if (imageUrl.isEmpty) {
+        print('Image URL is empty');
+        return _buildPlaceholder('Image non disponible');
+      }
+
+      // Vérifier si l'URL est valide
+      final uri = Uri.tryParse(imageUrl);
+      if (uri == null || !uri.isAbsolute) {
+        print('Invalid URL: $imageUrl');
+        return _buildPlaceholder('URL invalide', isError: true);
+      }
+
+      return Container(
+        decoration: BoxDecoration(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+          color: Colors.grey[200],
+        ),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+          child: CachedNetworkImage(
+            imageUrl: imageUrl,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+            httpHeaders: widget.token != null ? {
+              'Authorization': 'Bearer ${widget.token}',
+              'Accept': 'application/json',
+            } : null,
+            maxHeightDiskCache: 1000,
+            memCacheHeight: 500,
+            placeholder: (context, url) => _buildPlaceholder('Chargement...'),
+            errorWidget: (context, url, error) {
+              print('Erreur de chargement image: $url - $error');
+              // Afficher un message d'erreur approprié
+              return _buildPlaceholder('Erreur de chargement', isError: true);
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      print('Error in _buildPortfolioImage: $e');
+      return _buildPlaceholder('Erreur d\'affichage', isError: true);
+    }
   }
 
   Future<String?> _getTokenFromPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('access_token');
+    return prefs.getString('token');
   }
 
   void _navigateToQuotationDetails(String quotationId) {

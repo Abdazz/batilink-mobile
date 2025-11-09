@@ -1,13 +1,14 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:batilink_mobile_app/screens/pro_client/documents_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import '../../core/app_config.dart';
 import '../../models/business_hours.dart';
+import '../../models/document.dart';
 import '../../widgets/custom_text_field.dart';
 import 'business_hours_screen.dart';
-import 'documents_screen.dart';
 
 class EditProfessionalProfileScreen extends StatefulWidget {
   final Map<String, dynamic>? initialData;
@@ -36,6 +37,7 @@ class _EditProfessionalProfileScreenState extends State<EditProfessionalProfileS
   
   // Contrôleurs de texte
   final _companyNameController = TextEditingController();
+  final _rccmNumberController = TextEditingController();
   final _jobTitleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _experienceYearsController = TextEditingController();
@@ -84,6 +86,7 @@ class _EditProfessionalProfileScreenState extends State<EditProfessionalProfileS
         setState(() {
           // Données de base
           _companyNameController.text = professional['company_name']?.toString() ?? '';
+          _rccmNumberController.text = professional['rccm_number']?.toString() ?? '';
           _jobTitleController.text = professional['job_title']?.toString() ?? '';
           _descriptionController.text = professional['description']?.toString() ?? '';
           
@@ -198,16 +201,54 @@ class _EditProfessionalProfileScreenState extends State<EditProfessionalProfileS
           }
           
           // Charger les documents
-          if (professional['documents'] != null) {
-            try {
-              _documents = (json.decode(professional['documents']) as List)
-                  .map((item) => Document.fromJson(item))
-                  .toList();
-            } catch (e) {
-              debugPrint('Erreur lors du chargement des documents: $e');
+          try {
+            if (professional['documents'] != null) {
+              List<dynamic> docsList = [];
+              
+              if (professional['documents'] is String) {
+                // Si c'est une chaîne JSON, la décoder
+                docsList = json.decode(professional['documents']) as List;
+              } else if (professional['documents'] is List) {
+                // Si c'est déjà une liste
+                docsList = professional['documents'] as List;
+              }
+              
+              // Convertir chaque élément en Document
+              _documents = docsList.map<Document>((item) {
+                if (item is Map<String, dynamic>) {
+                  return Document.fromJson(Map<String, dynamic>.from(item));
+                }
+                return Document(
+                  id: DateTime.now().millisecondsSinceEpoch.toString(),
+                  name: 'Document',
+                  url: '',
+                  type: 'unknown',
+                  uploadedAt: DateTime.now(),
+                );
+              }).toList();
+            } else {
               _documents = [];
             }
-          } else {
+            
+            // Ajouter le document d'identité s'il est défini séparément
+            if (professional['id_document_path'] != null) {
+              final idDoc = _documents.firstWhere(
+                (doc) => doc.type == 'id_document',
+                orElse: () => Document(
+                  id: 'id_doc_${DateTime.now().millisecondsSinceEpoch}',
+                  name: 'Document d\'identité',
+                  url: professional['id_document_path'].toString(),
+                  type: 'id_document',
+                  uploadedAt: DateTime.now(),
+                ),
+              );
+              
+              if (!_documents.any((doc) => doc.type == 'id_document')) {
+                _documents.add(idDoc);
+              }
+            }
+          } catch (e) {
+            debugPrint('Erreur lors du chargement des documents: $e');
             _documents = [];
           }
         });
@@ -257,12 +298,8 @@ class _EditProfessionalProfileScreenState extends State<EditProfessionalProfileS
           _formData['avatar_base64'] = 'data:$mimeType;base64,$base64Image';
         });
         
-        // Afficher un message de succès
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Image sélectionnée avec succès')),
-          );
-        }
+        // Sauvegarder automatiquement l'image
+        await _saveProfile();
       }
     } catch (e) {
       if (mounted) {
@@ -277,7 +314,6 @@ class _EditProfessionalProfileScreenState extends State<EditProfessionalProfileS
   }
 
   Future<void> _saveProfile() async {
-    // Vérifier si le widget est toujours monté
     if (!mounted) return;
     
     setState(() {
@@ -285,152 +321,350 @@ class _EditProfessionalProfileScreenState extends State<EditProfessionalProfileS
     });
 
     try {
-      // Vérifier si le formulaire est initialisé
       if (_formKey.currentState == null) {
         debugPrint('Erreur: Le formulaire n\'est pas encore initialisé');
         throw Exception('Le formulaire n\'est pas encore prêt');
       }
       
-      // Sauvegarder l'état du formulaire
       _formKey.currentState!.save();
       
-      // Valider le formulaire
-      if (!_formKey.currentState!.validate()) {
-        debugPrint('Validation du formulaire échouée');
-        throw Exception('Veuillez corriger les erreurs dans le formulaire');
+      // Vérifier si c'est uniquement une mise à jour de photo
+      final bool isOnlyPhotoUpdate = _formData['avatar_base64'] != null && 
+          !_formKey.currentState!.validate() &&  // Si le formulaire n'est pas valide, c'est probablement une mise à jour de photo uniquement
+          widget.initialData != null;  // S'assurer que nous avons des données initiales
+      
+      debugPrint('=== VÉRIFICATION DU TYPE DE MISE À JOUR ===');
+      debugPrint('Avatar présent: ${_formData['avatar_base64'] != null}');
+      debugPrint('Mise à jour photo uniquement: $isOnlyPhotoUpdate');
+      
+      // Pour une mise à jour de photo uniquement, on saute la validation du formulaire
+      if (!isOnlyPhotoUpdate) {
+        if (!_formKey.currentState!.validate()) {
+          debugPrint('Validation du formulaire échouée');
+          throw Exception('Veuillez corriger les erreurs dans le formulaire');
+        }
+        
+        if (_companyNameController.text.isEmpty) {
+          throw Exception('Le nom de l\'entreprise est requis');
+        }
+        
+        if (_jobTitleController.text.isEmpty) {
+          throw Exception('Le poste est requis');
+        }
       }
-
+      
       debugPrint('=== PRÉPARATION DES DONNÉES ===');
-      
-      // Préparer les données du profil selon le format attendu par l'API
-      final Map<String, dynamic> requestData = {
-        // Données de base de l'utilisateur
-        'first_name': _formData['first_name']?.toString().trim() ?? '',
-        'last_name': _formData['last_name']?.toString().trim() ?? '',
-      };
-      
-      // Données du profil professionnel
-      final Map<String, dynamic> professionalData = {
-        'company_name': _companyNameController.text.trim(),
-        'job_title': _jobTitleController.text.trim(),
-        'description': _descriptionController.text.trim(),
-        'experience_years': int.tryParse(_experienceYearsController.text) ?? 0,
-        'hourly_rate': (double.tryParse(_hourlyRateController.text) ?? 0.0).toStringAsFixed(2),
-        'min_price': (double.tryParse(_minPriceController.text) ?? 0.0).toStringAsFixed(2),
-        'max_price': (double.tryParse(_maxPriceController.text) ?? 0.0).toStringAsFixed(2),
-        'address': _addressController.text.trim(),
-        'city': _cityController.text.trim(),
-        'postal_code': _postalCodeController.text.trim(),
-        'radius_km': int.tryParse(_radiusKmController.text) ?? 10,
-        'is_available': _isAvailableNotifier.value,
-      };
-      
-      // Ajouter les données professionnelles à la requête
-      requestData['professional'] = professionalData;
 
-      // Ajouter l'avatar s'il a été modifié
-      if (_formData['avatar_base64'] != null) {
-        requestData['avatar_base64'] = _formData['avatar_base64'];
-        debugPrint('Avatar ajouté à la requête');
+      // Préparer uniquement les champs modifiés
+      final Map<String, dynamic> requestData = {};
+      
+      // Si c'est uniquement une mise à jour de photo, on utilise une URL différente
+      if (isOnlyPhotoUpdate) {
+        debugPrint('=== MISE À JOUR DE LA PHOTO UNIQUEMENT ===');
+        final photoData = {'profile_photo_base64': _formData['avatar_base64']};
+        debugPrint('Données de la photo: ${photoData.toString()}');
+        
+        final url = '${AppConfig.baseUrl}/api/pro-client/update-profile-photo';
+        debugPrint('Envoi à l\'URL: $url');
+        
+        final response = await http.post(
+          Uri.parse(url),
+          headers: {
+            'Authorization': 'Bearer ${widget.token}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: json.encode(photoData),
+        );
+        
+        debugPrint('Statut de la réponse: ${response.statusCode}');
+        debugPrint('Corps de la réponse: ${response.body}');
+
+        if (response.statusCode == 200) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Photo de profil mise à jour avec succès'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+          return;
+        } else {
+          throw Exception('Erreur lors de la mise à jour de la photo de profil');
+        }
+      } else {
+        // Pour une mise à jour complète, on ajoute tous les champs modifiés
+        if (_companyNameController.text.isNotEmpty) {
+          requestData['company_name'] = _companyNameController.text.trim();
+        }
+        
+        if (_rccmNumberController.text.isNotEmpty) {
+          requestData['rccm_number'] = _rccmNumberController.text.trim();
+        }
+        
+        if (_jobTitleController.text.isNotEmpty) {
+          requestData['job_title'] = _jobTitleController.text.trim();
+        }
+        
+        if (_descriptionController.text.isNotEmpty) {
+          requestData['description'] = _descriptionController.text.trim();
+        }
+        
+        if (_experienceYearsController.text.isNotEmpty) {
+          requestData['experience_years'] = int.tryParse(_experienceYearsController.text) ?? 0;
+        }
+        
+        if (_hourlyRateController.text.isNotEmpty) {
+          requestData['hourly_rate'] = double.tryParse(_hourlyRateController.text) ?? 0.0;
+        }
+        
+        if (_minPriceController.text.isNotEmpty) {
+          requestData['min_price'] = double.tryParse(_minPriceController.text) ?? 0.0;
+        }
+        
+        if (_maxPriceController.text.isNotEmpty) {
+          requestData['max_price'] = double.tryParse(_maxPriceController.text) ?? 0.0;
+        }
+        
+        if (_addressController.text.isNotEmpty) {
+          requestData['address'] = _addressController.text.trim();
+        }
+        
+        if (_cityController.text.isNotEmpty) {
+          requestData['city'] = _cityController.text.trim();
+        }
+        
+        if (_postalCodeController.text.isNotEmpty) {
+          requestData['postal_code'] = _postalCodeController.text.trim();
+        }
+        
+        if (_radiusKmController.text.isNotEmpty) {
+          requestData['radius_km'] = int.tryParse(_radiusKmController.text) ?? 10;
+        }
+        
+        if (_formData['website']?.toString().trim().isNotEmpty == true) {
+          requestData['website'] = _formData['website']?.toString().trim();
+        }
+        
+        if (_formData['linkedin_profile']?.toString().trim().isNotEmpty == true) {
+          requestData['linkedin_profile'] = _formData['linkedin_profile']?.toString().trim();
+        }
+        
+        // Ajouter l'image de profil si elle a été modifiée
+        if (_formData['avatar_base64'] != null) {
+          requestData['profile_photo_base64'] = _formData['avatar_base64'];
+          debugPrint('Avatar ajouté à la requête');
+        }
+      }
+      
+      // Si aucune donnée à mettre à jour, ne rien faire
+      if (requestData.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Aucune modification à enregistrer')),
+          );
+        }
+        return;
       }
 
       // Convertir les horaires d'ouverture au format attendu
       final Map<String, dynamic> businessHoursMap = {};
       
-      debugPrint('=== ENREGISTREMENT DES HORAIRES ===');
+      // Mappage des jours en anglais pour l'API
+      final Map<String, String> daysMapping = {
+        'lundi': 'monday',
+        'mardi': 'tuesday',
+        'mercredi': 'wednesday',
+        'jeudi': 'thursday',
+        'vendredi': 'friday',
+        'samedi': 'saturday',
+        'dimanche': 'sunday',
+      };
       
       for (var hours in _businessHours) {
         final day = hours.day.toLowerCase();
+        final enDay = daysMapping[day] ?? day;
         
         if (hours.isOpen && hours.openTime != null && hours.closeTime != null) {
           final openTime = '${hours.openTime!.hour.toString().padLeft(2, '0')}:${hours.openTime!.minute.toString().padLeft(2, '0')}';
           final closeTime = '${hours.closeTime!.hour.toString().padLeft(2, '0')}:${hours.closeTime!.minute.toString().padLeft(2, '0')}';
           
-          debugPrint('$day: $openTime - $closeTime');
-          
-          businessHoursMap[day] = {
+          businessHoursMap[enDay] = {
             'open': openTime,
             'close': closeTime,
             'is_closed': false,
           };
         } else {
-          debugPrint('$day: Fermé');
-          businessHoursMap[day] = {
-            'open': '',
-            'close': '',
+          businessHoursMap[enDay] = {
+            'open': '00:00',
+            'close': '00:00',
             'is_closed': true,
           };
         }
       }
       
-      final businessHoursJson = json.encode(businessHoursMap);
-      debugPrint('Horaire JSON: $businessHoursJson');
+      // Ajouter les horaires formatés
+      requestData['business_hours'] = json.encode(businessHoursMap);
       
-      // Ajouter les horaires aux données professionnelles
-      requestData['professional']['business_hours'] = businessHoursJson;
+      // Ajouter les méthodes de paiement (à adapter selon votre logique)
+      requestData['accepted_payment_methods'] = ['cash', 'mobile_money'];
+      
+      // Ajouter les compétences (à adapter selon votre logique)
+      requestData['skills'] = [
+        {
+          'name': 'Compétence 1',
+          'experience_years': 2,
+          'level': 'intermediate'
+        }
+      ];
 
       // Afficher les données qui seront envoyées pour débogage
       debugPrint('=== DONNÉES À ENVOYER ===');
       debugPrint(jsonEncode(requestData));
 
       // Envoyer la requête de mise à jour
-      debugPrint('Envoi de la requête à ${AppConfig.baseUrl}/api/professional/profile');
+      final url = isOnlyPhotoUpdate 
+          ? '${AppConfig.baseUrl}/api/pro-client/update-profile-photo'
+          : '${AppConfig.baseUrl}/api/pro-client/professional-profile';
+          
+      debugPrint('Envoi de la requête à $url');
       
-      final response = await http.put(
-        Uri.parse('${AppConfig.baseUrl}/api/professional/profile'),
-        headers: {
-          'Authorization': 'Bearer ${widget.token}',
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode(requestData),
-      );
+      http.Response response;
+      try {
+        response = await http.put(
+          Uri.parse(url),
+          headers: {
+            'Authorization': 'Bearer ${widget.token}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: json.encode(requestData),
+        );
 
-      debugPrint('=== RÉPONSE DU SERVEUR ===');
-      debugPrint('Statut: ${response.statusCode}');
-      debugPrint('Corps: ${response.body}');
+        debugPrint('=== RÉPONSE DU SERVEUR ===');
+        debugPrint('Statut: ${response.statusCode}');
+        debugPrint('Corps: ${response.body}');
 
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        debugPrint('Réponse décodée: $responseData');
-        
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          final responseData = json.decode(response.body);
+          debugPrint('Réponse décodée: $responseData');
+          
+          if (mounted) {
+            // Afficher un message de succès
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(responseData['message'] ?? 'Profil mis à jour avec succès'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+            
+            // Mettre à jour l'image dans le state
+            if (isOnlyPhotoUpdate && responseData['data']?['profile_photo'] != null) {
+              _formData['profile_photo'] = responseData['data']['profile_photo'];
+            }
+            
+            // Retourner les données mises à jour à l'écran parent
+            if (mounted) {
+              Navigator.of(context).pop({
+                'success': true,
+                'data': {
+                  ...responseData['data'] ?? {},
+                  'profile_photo': responseData['data']?['profile_photo'] ?? _formData['profile_photo'],
+                  'avatar': _formData['avatar_base64'] != null 
+                      ? 'data:image/jpeg;base64,${_formData['avatar_base64']}'
+                      : _formData['profile_photo'],
+                  'documents': _documents.map((doc) => doc.toJson()).toList(),
+                },
+              });
+            }
+          }
+        } else {
+          String errorMessage = 'Erreur lors de la mise à jour du profil';
+          String errorDetails = '';
+          
+          try {
+            final errorData = json.decode(response.body);
+            errorMessage = errorData['message']?.toString() ?? errorMessage;
+            
+            // Traiter les erreurs de validation de manière plus conviviale
+            if (errorData['errors'] != null) {
+              final errors = errorData['errors'] as Map<String, dynamic>;
+              errorDetails = errors.entries
+                  .map((e) => '• ${e.value.join("\n• ")}')
+                  .join('\n');
+              
+              // Si c'est une erreur de document manquant, proposer d'ajouter un document
+              if (errors.containsKey('id_document_path')) {
+                errorDetails += '\n\nVeuillez ajouter un document d\'identité dans l\'onglet Documents.';
+              }
+              
+              // Si c'est une erreur de RCCM déjà utilisé, proposer de le modifier
+              if (errors.containsKey('rccm_number')) {
+                errorDetails += '\n\nVeuillez vérifier et corriger votre numéro RCCM.';
+              }
+            }
+            
+            debugPrint('Erreur détaillée: $errorMessage\n$errorDetails');
+            
+            // Afficher une boîte de dialogue d'erreur plus détaillée
+            if (mounted) {
+              await showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Erreur de mise à jour'),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(errorMessage),
+                        if (errorDetails.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          const Text('Détails :', style: TextStyle(fontWeight: FontWeight.bold)),
+                          Text(errorDetails),
+                        ],
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                ),
+              );
+            }
+            
+            throw Exception(errorMessage);
+          } catch (e) {
+            debugPrint('Erreur lors du traitement de la réponse: $e');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Une erreur est survenue lors de la mise à jour du profil'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Erreur lors de l\'envoi de la requête: $e');
         if (mounted) {
-          // Afficher un message de succès
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Profil mis à jour avec succès'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 3),
+              content: Text('Erreur de connexion. Veuillez réessayer plus tard.'),
+              backgroundColor: Colors.red,
             ),
           );
-          
-          // Retourner les données mises à jour à l'écran parent
-          Navigator.of(context).pop({
-            'success': true,
-            'data': {
-              ..._formData,
-              'professional': {
-                ...professionalData,
-                'business_hours': businessHoursJson,
-              },
-              'avatar': responseData['data']?['avatar'] ?? _formData['avatar'],
-            }
-          });
         }
-      } else {
-        String errorMessage = 'Erreur lors de la mise à jour du profil';
-        try {
-          final errorData = json.decode(response.body);
-          errorMessage = errorData['message']?.toString() ?? errorMessage;
-          if (errorData['errors'] != null) {
-            errorMessage += '\n' + errorData['errors'].toString();
-          }
-          debugPrint('Erreur détaillée: $errorMessage');
-        } catch (e) {
-          errorMessage = 'Erreur inattendue: ${response.statusCode} - ${response.body}';
-          debugPrint('Erreur lors du décodage de la réponse d\'erreur: $e');
-        }
-        throw Exception(errorMessage);
       }
     } catch (e) {
       debugPrint('=== ERREUR LORS DE LA SAUVEGARDE ===');
@@ -481,6 +715,7 @@ class _EditProfessionalProfileScreenState extends State<EditProfessionalProfileS
   void dispose() {
     _tabController.dispose();
     _companyNameController.dispose();
+    _rccmNumberController.dispose();
     _jobTitleController.dispose();
     _descriptionController.dispose();
     _experienceYearsController.dispose();
@@ -523,11 +758,12 @@ class _EditProfessionalProfileScreenState extends State<EditProfessionalProfileS
           ),
           DocumentsScreen(
             initialDocuments: _documents,
-            onSave: (updatedDocuments) {
+            onDocumentsUpdated: (updatedDocuments) {
               setState(() {
-                _documents = updatedDocuments.cast<Document>();
+                _documents = updatedDocuments;
               });
             },
+            token: widget.token,
           ),
         ],
       ),
@@ -617,8 +853,33 @@ class _EditProfessionalProfileScreenState extends State<EditProfessionalProfileS
               controller: _companyNameController,
               label: 'Nom de l\'entreprise',
               hint: 'Entrez le nom de votre entreprise',
-              prefixIcon: Icons.business,
-              onChanged: (value) {},
+              keyboardType: TextInputType.text,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Le nom de l\'entreprise est requis';
+                }
+                return null;
+              },
+              onSaved: (value) {
+                _formData['company_name'] = value;
+              },
+            ),
+            const SizedBox(height: 16),
+            
+            CustomTextField(
+              controller: _rccmNumberController,
+              label: 'Numéro RCCM',
+              hint: 'Entrez votre numéro RCCM',
+              keyboardType: TextInputType.text,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Le numéro RCCM est obligatoire';
+                }
+                return null;
+              },
+              onSaved: (value) {
+                _formData['rccm_number'] = value;
+              },
             ),
             const SizedBox(height: 16),
             

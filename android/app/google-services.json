@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "400707887159",
+    "project_id": "batilink-8b815",
+    "storage_bucket": "batilink-8b815.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:400707887159:android:9d25235c51169bdbcd9fb2",
+        "android_client_info": {
+          "package_name": "com.example.batilink_mobile_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAW35JtbLh98q7jk_UeAp6Uo09Ke0IC_lM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -3,13 +3,13 @@
 import 'package:http/http.dart' as http;
 class AppConfig {
   // Configuration des environnements
-  static const Environment environment = Environment.development;
+  static const Environment environment = Environment.production;
 
   // Configuration alternative - IP directe (si DNS pose problème)
-  static const bool useDirectIP = true; // Mettez à true si vous avez des problèmes DNS
-  static const bool ignoreSSLCertificate = false; // Ignorer validation SSL (pour tests IP directe)
+  static const bool useDirectIP = false; // À désactiver en production pour utiliser le nom de domaine
+  static const bool ignoreSSLCertificate = true; // Ignorer validation SSL (pour tests IP directe)
   static const bool useHTTP = false; // Utiliser HTTP au lieu de HTTPS (non sécurisé, pour tests)
-  static const String directIP = '147.79.115.191'; // IP réelle du serveur (résolue via nslookup)
+  static const String directIP = '147.79.115.191'; // Ancienne IP du serveur (conservée pour référence)
 
   // Configuration des URLs de base selon l'environnement
   /// Corrige une URL d'avatar qui pourrait utiliser localhost
@@ -45,10 +45,10 @@ class AppConfig {
       switch (environment) {
         case Environment.development:
           return 'http://10.0.2.2:8000';
+        case Environment.production:
+          return 'https://batilink.golden-technologies.com';
         case Environment.staging:
           return '${protocol}staging-api.batilink.com';
-        case Environment.production:
-          return '${protocol}$directIP';
       }
     }
 
@@ -56,6 +56,7 @@ class AppConfig {
     switch (environment) {
       case Environment.development:
         return 'http://10.0.2.2:8000';
+        // return 'http://192.168.1.95:8000';
       case Environment.staging:
         return '${protocol}staging-api.batilink.com';
       case Environment.production:
@@ -68,6 +69,9 @@ class AppConfig {
 
   // URL pour les images et médias
   static String get mediaBaseUrl => '$baseUrl/storage';
+  
+  // Points de terminaison API
+  static String get uploadDocumentEndpoint => '$apiBaseUrl/upload-document';
 
   // Configuration des timeouts
   static const int connectTimeout = 30000; // 30 secondes

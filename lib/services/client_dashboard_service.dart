@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:batilink_mobile_app/utils/error_handler.dart';
 
 class ClientDashboardService {
   final String baseUrl;
@@ -9,29 +11,29 @@ class ClientDashboardService {
 
   Future<String?> _getToken() async {
     final prefs = await SharedPreferences.getInstance();
-
-    // Essaie d'abord la clé principale 'token'
-    String? token = prefs.getString('token');
-
-    // Si pas trouvé, essaie l'ancienne clé 'access_token' pour compatibilité
-    if (token == null) {
-      token = prefs.getString('access_token');
-      if (token != null) {
-        print('Token trouvé avec l\'ancienne clé access_token - migration recommandée');
-        // Migre vers la nouvelle clé pour éviter la confusion
-        await prefs.setString('token', token);
-        await prefs.remove('access_token');
-        print('Token migré vers la clé principale');
-      }
-    }
-
+    final token = prefs.getString('token');
     print('Token récupéré depuis SharedPreferences: ${token != null ? 'Présent (${token.length} caractères)' : 'Absent'}');
     return token;
   }
 
   /// Récupère les statistiques du dashboard client
   Future<Map<String, dynamic>> getDashboardStats() async {
+    // Vérifier d'abord la connexion Internet
+    final hasConnection = await ErrorHandler.checkInternetConnection();
+    if (!hasConnection) {
+      // Une notification est déjà affichée par ErrorHandler
+      return _getDemoDashboardData();
+    }
+
     final token = await _getToken();
+    if (token == null) {
+      await ErrorHandler.handleNetworkError(
+        Exception('Token non trouvé'),
+        StackTrace.current,
+        customMessage: 'Session expirée. Veuillez vous reconnecter.',
+      );
+      return _getDemoDashboardData();
+    }
 
     try {
       final response = await http.get(
@@ -40,31 +42,33 @@ class ClientDashboardService {
           'Authorization': 'Bearer $token',
           'Accept': 'application/json',
         },
-      );
+      ).timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['success'] == true && data['data'] != null) {
           final apiData = Map<String, dynamic>.from(data['data']);
-
-          // Mapper les données de l'API vers le format attendu par l'interface
           return _mapApiDataToDashboardFormat(apiData);
         } else {
           throw Exception('Format de réponse inattendu');
         }
+      } else if (response.statusCode == 401) {
+        await ErrorHandler.handleNetworkError(
+          Exception('Non autorisé'),
+          StackTrace.current,
+          customMessage: 'Session expirée. Veuillez vous reconnecter.',
+        );
+        return _getDemoDashboardData();
       } else if (response.statusCode == 404) {
         print('Endpoint dashboard client non trouvé - utilisation des données de démonstration');
         return _getDemoDashboardData();
       } else {
         throw Exception('Erreur serveur: ${response.statusCode}');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Erreur lors de la récupération des statistiques client: $e');
-      if (e.toString().contains('Token non trouvé') || token == null) {
-        print('Token manquant - utilisation des données de démonstration');
-        return _getDemoDashboardData();
-      }
-      throw e;
+      await ErrorHandler.handleNetworkError(e, stackTrace);
+      return _getDemoDashboardData();
     }
   }
 
@@ -97,7 +101,10 @@ class ClientDashboardService {
   /// Méthode principale pour récupérer toutes les données du dashboard client
   Future<Map<String, dynamic>> getAllDashboardData() async {
     try {
-      final data = await getDashboardStats();
+      final data = await getDashboardStats().catchError((e, stackTrace) {
+        // La gestion d'erreur est déjà faite dans getDashboardStats
+        return _getDemoDashboardData();
+      });
       return data;
     } catch (e) {
       print('Erreur lors de la récupération des données du dashboard client: $e');

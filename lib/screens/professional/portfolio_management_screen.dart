@@ -1,9 +1,12 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:jwt_decoder/jwt_decoder.dart';
 import '../../services/portfolio_service.dart';
+import '../../services/auth_service.dart';
 import '../../core/app_config.dart';
-import 'dart:convert';
 
 class PortfolioManagementScreen extends StatefulWidget {
   final String token;
@@ -19,6 +22,7 @@ class _PortfolioManagementScreenState extends State<PortfolioManagementScreen> {
   List<Map<String, dynamic>> _portfolios = [];
   bool _isLoading = true;
   String _error = '';
+  String? _professionalId;
 
   /// Transforme les données du backend vers le format attendu par le frontend
   Map<String, dynamic> _transformPortfolioData(Map<String, dynamic> backendData) {
@@ -47,7 +51,134 @@ class _PortfolioManagementScreenState extends State<PortfolioManagementScreen> {
   @override
   void initState() {
     super.initState();
-    _loadPortfolios();
+    _getProfessionalIdAndLoadPortfolios();
+  }
+
+  // Récupère l'ID du professionnel à partir du token
+  Future<String?> _getProfessionalId(String token) async {
+    try {
+      // Nettoyer le token des éventuels guillemets ou espaces
+      token = token.trim().replaceAll('"', '');
+      
+      // Vérifier si le token est vide
+      if (token.isEmpty) {
+        print('❌ Le token est vide');
+        return null;
+      }
+      
+      print('🔍 Token reçu: ${token.length > 20 ? '${token.substring(0, 20)}...' : token}');
+      
+      // Vérifier si c'est un JWT (3 parties séparées par des points)
+      final parts = token.split('.');
+      if (parts.length == 3) {
+        // C'est un JWT, essayer de le décoder
+        try {
+          print('🔍 Détection d\'un token JWT, tentative de décodage...');
+          final decodedToken = JwtDecoder.decode(token);
+          print('✅ Token JWT décodé avec succès');
+          
+          // Vérifier si le token contient l'ID du professionnel
+          if (decodedToken['professional_id'] != null) {
+            return decodedToken['professional_id'].toString();
+          }
+          
+          // Si l'ID du professionnel n'est pas directement dans le token, vérifier dans user.professional
+          if (decodedToken['user'] != null && decodedToken['user']['professional'] != null) {
+            return decodedToken['user']['professional']['id']?.toString();
+          }
+          
+          print('ℹ️ Aucun ID de professionnel trouvé dans le JWT');
+        } catch (e) {
+          print('⚠️ Erreur lors du décodage du JWT: $e');
+        }
+      }
+      
+      // Si on arrive ici, ce n'est pas un JWT ou le décodage a échoué
+      // Faire une requête API pour obtenir l'ID du professionnel
+      print('🔍 Le token n\'est pas un JWT, tentative de récupération du profil via API...');
+      
+      try {
+        // Créer une instance de AuthService
+        final authService = AuthService(baseUrl: AppConfig.baseUrl);
+        
+        // Récupérer le profil professionnel
+        final response = await authService.getProfessionalProfile(accessToken: token);
+        
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          print('✅ Profil professionnel récupéré avec succès');
+          
+          // Essayer d'extraire l'ID du professionnel de différentes manières
+          if (data is Map) {
+            // Essayer data.id
+            if (data['id'] != null) {
+              return data['id'].toString();
+            }
+            
+            // Essayer data.data.id
+            if (data['data'] is Map && data['data']['id'] != null) {
+              return data['data']['id'].toString();
+            }
+            
+            // Essayer data.user.professional.id
+            if (data['user'] is Map && 
+                data['user']['professional'] is Map && 
+                data['user']['professional']['id'] != null) {
+              return data['user']['professional']['id'].toString();
+            }
+            
+            // Afficher la structure complète pour le débogage
+            print('ℹ️ Structure des données du profil: $data');
+          }
+          
+          print('ℹ️ Aucun ID de professionnel trouvé dans la réponse du serveur');
+        } else {
+          print('❌ Erreur lors de la récupération du profil: ${response.statusCode} - ${response.body}');
+        }
+      } catch (e) {
+        print('❌ Erreur lors de la récupération du profil: $e');
+      }
+      
+      return null;
+    } catch (e) {
+      print('❌ Erreur lors de la récupération de l\'ID du professionnel: $e');
+      return null;
+    }
+  }
+  
+  Future<void> _getProfessionalIdAndLoadPortfolios() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _error = '';
+      });
+      
+      final prefs = await SharedPreferences.getInstance();
+      // Utiliser 'token' comme clé pour récupérer le token depuis SharedPreferences
+      final token = prefs.getString('token') ?? widget.token;
+      
+      print('🔑 Token récupéré: ${token.isNotEmpty ? 'OUI (${token.substring(0, 5)}...)' : 'NON'}');
+      
+      if (token.isEmpty) {
+        throw Exception('Aucun token disponible');
+      }
+      
+      // Récupérer l'ID du professionnel
+      _professionalId = await _getProfessionalId(token);
+      
+      if (_professionalId == null) {
+        throw Exception('Impossible de récupérer l\'ID du professionnel depuis le token');
+      }
+      
+      // Charger les portfolios avec l'ID du professionnel
+      await _loadPortfolios();
+    } catch (e) {
+      setState(() {
+        _error = 'Erreur lors de la récupération des informations du professionnel: $e';
+        _isLoading = false;
+      });
+      print('❌ Erreur: $_error');
+    }
   }
 
   Future<void> _loadPortfolios() async {
@@ -59,11 +190,30 @@ class _PortfolioManagementScreenState extends State<PortfolioManagementScreen> {
       });
 
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token') ?? widget.token;
+      // Utiliser 'token' comme clé pour récupérer le token depuis SharedPreferences
+      final token = prefs.getString('token') ?? widget.token;
+      
+      print('🔑 Token utilisé pour le chargement: ${token.isNotEmpty ? 'OUI (${token.substring(0, 5)}...)' : 'NON'}');
+
+      if (token.isEmpty) {
+        throw Exception('Aucun token disponible');
+      }
+      
+      // Si l'ID du professionnel n'est pas encore défini, essayer de le récupérer
+      if (_professionalId == null) {
+        _professionalId = await _getProfessionalId(token);
+        if (_professionalId == null) {
+          throw Exception('Impossible de récupérer l\'ID du professionnel');
+        }
+      }
 
       print('🔑 Token utilisé: ${token.isNotEmpty ? "OUI (${token.substring(0, 20)}...)" : "NON"}');
+      print('👤 ID du professionnel: $_professionalId');
 
-      final response = await _portfolioService.getPortfolios(accessToken: token);
+      final response = await _portfolioService.getPortfolios(
+        accessToken: token,
+        professionalId: _professionalId!,
+      );
 
       print('📡 Réponse API reçue - Status: ${response.statusCode}');
 
@@ -230,10 +380,21 @@ class _PortfolioManagementScreenState extends State<PortfolioManagementScreen> {
     if (confirmed == true) {
       try {
         final prefs = await SharedPreferences.getInstance();
-        final token = prefs.getString('access_token') ?? widget.token;
+        // Utiliser 'token' comme clé pour récupérer le token depuis SharedPreferences
+        final token = prefs.getString('token') ?? widget.token;
+        
+        print('🔑 Token utilisé pour la suppression: ${token.isNotEmpty ? 'OUI (${token.substring(0, 5)}...)' : 'NON'}');
+
+        if (_professionalId == null) {
+          _professionalId = await _getProfessionalId(token);
+          if (_professionalId == null) {
+            throw Exception('Impossible de récupérer l\'ID du professionnel');
+          }
+        }
 
         final response = await _portfolioService.deletePortfolio(
           accessToken: token,
+          professionalId: _professionalId!,
           portfolioId: portfolio['id'].toString(),
         );
 
@@ -599,8 +760,60 @@ class _AddPortfolioDialogState extends State<AddPortfolioDialog> {
   Future<void> _submit() async {
     print('=== DEBUG - DÉBUT SOUMISSION PORTFOLIO ===');
 
-    if (!_formKey.currentState!.validate()) {
+    if (!(_formKey.currentState?.validate() ?? false)) {
       print('❌ Échec validation formulaire');
+      return;
+    }
+    
+    // Récupérer le token depuis SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token') ?? widget.token;
+    
+    if (token.isEmpty) {
+      print('❌ Aucun token disponible');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Erreur d\'authentification. Veuillez vous reconnecter.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+    
+    print('🔑 Token utilisé pour la soumission: ${token.substring(0, 5)}...');
+    
+    // Récupérer l'ID du professionnel depuis le token
+    String? professionalId;
+    try {
+      // Décoder le token JWT pour obtenir l'ID du professionnel
+      final decodedToken = JwtDecoder.decode(token);
+      
+      // Vérifier si le token contient l'ID du professionnel
+      if (decodedToken['professional_id'] != null) {
+        professionalId = decodedToken['professional_id'].toString();
+      } else if (decodedToken['user'] != null && 
+                 decodedToken['user']['professional'] != null) {
+        professionalId = decodedToken['user']['professional']['id']?.toString();
+      }
+      
+      if (professionalId == null) {
+        throw Exception('Impossible de récupérer l\'ID du professionnel depuis le token');
+      }
+      
+      print('👤 ID du professionnel récupéré: $professionalId');
+      
+    } catch (e) {
+      print('❌ Erreur lors du décodage du token: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur de token: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
       return;
     }
 
@@ -652,9 +865,12 @@ class _AddPortfolioDialogState extends State<AddPortfolioDialog> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token') ?? widget.token;
-
-      print('🔑 Token récupéré: ${token.isNotEmpty ? "OUI (${token.substring(0, 20)}...)" : "NON"}');
+      final token = prefs.getString('token') ?? widget.token;
+      final tokenPreview = token.isNotEmpty 
+          ? 'OUI (${token.length > 20 ? '${token.substring(0, 20)}...' : token})' 
+          : 'NON';
+      
+      print('🔑 Token récupéré: $tokenPreview');
 
       if (token.isEmpty) {
         throw Exception('Token d\'authentification manquant. Veuillez vous reconnecter.');
@@ -675,25 +891,29 @@ class _AddPortfolioDialogState extends State<AddPortfolioDialog> {
 
       final response = isEditing
           ? await widget.portfolioService.updatePortfolio(
-              accessToken: token,
+              accessToken: widget.token,
+              professionalId: professionalId!,
               portfolioId: widget.portfolio!['id'].toString(),
               title: _titleController.text,
               description: _descriptionController.text,
               category: _categoryController.text,
-              tags: tags,
+              tags: _tagsController.text.split(',').map((e) => e.trim()).toList(),
               isFeatured: _isFeatured,
-              completedAt: _completedAtController.text.trim().isNotEmpty ? _completedAtController.text.trim() : null,
+              completedAt: _completedAtController.text.isNotEmpty ? _completedAtController.text : null,
               filePath: _selectedImagePath,
+              fileName: _selectedImageName,
             )
           : await widget.portfolioService.createPortfolio(
-              accessToken: token,
+              accessToken: widget.token,
+              professionalId: professionalId!,
               title: _titleController.text,
               description: _descriptionController.text,
               category: _categoryController.text,
-              tags: tags,
+              tags: _tagsController.text.split(',').map((e) => e.trim()).toList(),
               isFeatured: _isFeatured,
-              completedAt: _completedAtController.text.trim().isNotEmpty ? _completedAtController.text.trim() : null,
+              completedAt: _completedAtController.text.isNotEmpty ? _completedAtController.text : null,
               filePath: _selectedImagePath!,
+              fileName: _selectedImageName,
             );
 
       print('📡 Réponse API reçue - Status: ${response.statusCode}');

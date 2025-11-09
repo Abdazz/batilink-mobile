@@ -1,9 +1,7 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../models/professional.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/professional_service.dart';
 import '../../services/client_dashboard_service.dart';
 import '../../core/app_config.dart';
@@ -18,8 +16,7 @@ class ClientDashboardScreen extends StatefulWidget {
   const ClientDashboardScreen({
     Key? key,
     required this.token,
-    required this.userData,
-    required Map profile,
+    required this.userData, required Map profile,
   }) : super(key: key);
 
   @override
@@ -28,12 +25,13 @@ class ClientDashboardScreen extends StatefulWidget {
 
 class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
   int _selectedIndex = 0;
-  List<Professional> _professionals = [];
-  int _quotationsCount = 0;
-  int _professionalsWithQuotationsCount = 0;
 
-  // Statistiques du profil client
-  int _totalJobs = 0;
+  // Données du dashboard
+  int _totalFavoris = 0;
+  int _totalProfessionnels = 0;  // Ajout de la variable manquante
+  // État pour stocker les données du tableau de bord
+  Map<String, dynamic>? _dernierDevisAccepte;
+  Map<String, dynamic>? _dernierProDevis;
 
   final ProfessionalService _professionalService = ProfessionalService(baseUrl: AppConfig.baseUrl);
   final ClientDashboardService _dashboardService = ClientDashboardService(baseUrl: AppConfig.baseUrl);
@@ -43,64 +41,32 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
     super.initState();
     _loadDashboardData();
     _loadProfessionals();
-    _loadAppointments();
-    _loadRecentActivities();
-    _loadClientStats();
-  }
-
-  Future<void> _loadClientStats() async {
-    try {
-      final token = widget.token;
-      if (token.isEmpty) return;
-
-      final response = await http.get(
-        Uri.parse('${AppConfig.baseUrl}/api/client/stats'),
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data is Map<String, dynamic> && data.containsKey('data')) {
-          final stats = data['data'];
-          if (stats is Map<String, dynamic>) {
-            if (mounted) {
-              setState(() {
-                _totalJobs = stats['total_jobs'] ?? 0;
-                // Mettre à jour les compteurs du dashboard avec les vraies données
-                _quotationsCount = _totalJobs;
-              });
-            }
-          }
-        }
-      }
-    } catch (e) {
-      print('Erreur lors du chargement des statistiques client: $e');
-    }
   }
 
   Future<void> _loadDashboardData() async {
     try {
-      await _dashboardService.getAllDashboardData();
-
+      final data = await _dashboardService.getAllDashboardData();
       if (mounted) {
         setState(() {
-          // Les données sont déjà récupérées depuis l'API dans les autres méthodes
+          _totalFavoris = data['total_favoris'] ?? 0;
+          _totalProfessionnels = data['total_professionnels'] ?? 0;
+          _dernierDevisAccepte = data['dernier_devis_accepte'];
+          _dernierProDevis = data['dernier_pro_devis'];
         });
       }
     } catch (e) {
-      print('Erreur lors du chargement des données du dashboard: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur lors du chargement des données: $e')),
+        );
+      }
     }
   }
 
   Future<void> _loadProfessionals() async {
     try {
-      final professionals = await _professionalService.getInteractedProfessionals();
-      setState(() {
-        _professionals = professionals;
-      });
+      // Récupérer les professionnels avec qui l'utilisateur a interagi
+      await _professionalService.getInteractedProfessionals();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -110,149 +76,68 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
     }
   }
 
-  Future<void> _toggleFavorite(Professional professional) async {
-    final success = await _professionalService.toggleFavorite(professional.id);
-    if (success && mounted) {
-      setState(() {
-        _professionals = _professionals.map((p) =>
-          p.id == professional.id ? professional.copyWith(isFavorite: !professional.isFavorite) : p
-        ).toList();
-      });
-    }
-  }
-
-  List<Map<String, dynamic>> _upcomingAppointments = [];
-  List<Map<String, dynamic>> _recentActivities = [];
-
-  Future<void> _loadAppointments() async {
-    try {
-      final dashboardData = await _dashboardService.getAllDashboardData();
-
-      if (mounted) {
-        setState(() {
-          // Créer les rendez-vous à partir des données API
-          final dernierDevisAccepte = dashboardData['dernier_devis_accepte'];
-
-          _upcomingAppointments = [];
-
-          // Ajouter le dernier devis accepté (status quoted)
-          if (dernierDevisAccepte != null) {
-            _upcomingAppointments.add({
-              'title': 'Devis accepté',
-              'date': dernierDevisAccepte['date'] ?? 'Date inconnue',
-              'service': dernierDevisAccepte['service'] ?? 'Service non spécifié',
-              'status': 'Accepté',
-              'color': Colors.green,
-            });
-          }
-
-          // Calculer le nombre de devis
-          _quotationsCount = 0;
-          if (dernierDevisAccepte != null) _quotationsCount++;
-
-          // Calculer le nombre de professionnels avec lesquels le client a interagi
-          _professionalsWithQuotationsCount = _professionals.length;
-        });
-      }
-    } catch (e) {
-      print('Erreur lors du chargement des rendez-vous: $e');
-    }
-  }
-
-  Future<void> _loadRecentActivities() async {
-    try {
-      final dashboardData = await _dashboardService.getAllDashboardData();
-
-      if (mounted) {
-        setState(() {
-          _recentActivities = [];
-
-          // Ajouter les activités à partir des données API
-          final dernierProDevis = dashboardData['dernier_pro_devis'];
-
-          if (dernierProDevis != null) {
-            _recentActivities.add({
-              'title': 'Devis du professionnel',
-              'date': dernierProDevis['date'] ?? 'Date inconnue',
-              'amount': dernierProDevis['montant'] ?? 'Montant inconnu',
-              'icon': Icons.receipt,
-              'color': Colors.purple,
-            });
-          }
-
-          // Ajouter d'autres activités par défaut si aucune donnée API
-          if (_recentActivities.isEmpty) {
-            _recentActivities = [
-              {
-                'title': 'Bienvenue sur Batilink',
-                'date': 'Aujourd\'hui',
-                'amount': 'Découvrez nos professionnels',
-                'icon': Icons.star,
-                'color': Colors.amber,
-              },
-            ];
-          }
-        });
-      }
-    } catch (e) {
-      print('Erreur lors du chargement des activités récentes: $e');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFE5E5E5),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        title: Text(
-          'Tableau de bord',
-          style: GoogleFonts.poppins(
-            color: Colors.black87,
-            fontWeight: FontWeight.w600,
+      backgroundColor: Colors.grey[50],
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _loadDashboardData,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // En-tête avec bienvenue et notification
+                _buildHeader(),
+                const SizedBox(height: 24),
+
+                // Cartes de statistiques
+                _buildStatsRow(),
+                const SizedBox(height: 24),
+
+                // Dernier devis accepté
+                _buildRecentActivities(),
+                const SizedBox(height: 24),
+
+                // Dernier professionnel avec devis
+                _buildRecentProfessionals(),
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_none, color: Colors.black54),
-            onPressed: () {},
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildWelcomeCard(),
-            const SizedBox(height: 24),
-            _buildStatsRow(),
-            const SizedBox(height: 24),
-            _buildNextAppointment(),
-            const SizedBox(height: 24),
-            _buildRecentActivities(),
-            const SizedBox(height: 24),
-            _buildRecentProfessionals(),
-          ],
         ),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
-        onTap: (index) {
+        onTap: (index) async {
           if (index == 1) { // Index pour l'onglet de recherche
-            if (widget.token.isNotEmpty) {
+            // Récupérer le token depuis les propriétés du widget ou depuis SharedPreferences
+            final prefs = await SharedPreferences.getInstance();
+            final token = widget.token.isNotEmpty ? widget.token : (prefs.getString('token') ?? '');
+            
+            print('Token avant navigation vers ProfessionalSearchScreen: ${token.isNotEmpty ? 'Présent' : 'Manquant'}');
+            
+            if (token.isNotEmpty) {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => ProfessionalSearchScreen(
-                  token: widget.token,
+                  token: token,
                   userData: widget.userData,
                 )),
               );
             } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Token d\'authentification manquant. Veuillez vous reconnecter.')),
-              );
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Session expirée. Veuillez vous reconnecter.'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                // Rediriger vers l'écran de connexion si nécessaire
+                // Navigator.pushReplacementNamed(context, '/login');
+              }
             }
             return; // Ne pas mettre à jour _selectedIndex pour rester sur l'onglet actuel
           }
@@ -303,7 +188,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
     );
   }
 
-  Widget _buildWelcomeCard() {
+  Widget _buildHeader() {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -366,28 +251,19 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
       children: [
         Expanded(
           child: _buildStatCard(
-            'Devis',
-            _quotationsCount.toString(),
-            Icons.receipt_long,
-            const Color(0xFF2196F3),
+            'Favoris',
+            '$_totalFavoris',
+            Icons.favorite,
+            const Color(0xFFFF5252),
           ),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         Expanded(
           child: _buildStatCard(
             'Professionnels',
-            _professionalsWithQuotationsCount.toString(),
+            '$_totalProfessionnels',
             Icons.people,
             const Color(0xFF4CAF50),
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _buildStatCard(
-            'Favoris',
-            '0', // TODO: Récupérer depuis l'API quand disponible
-            Icons.favorite,
-            const Color(0xFFFFCC00),
           ),
         ),
       ],
@@ -440,52 +316,34 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
     );
   }
 
-  Widget _buildNextAppointment() {
+  Widget _buildRecentActivities() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Dernier devis accepté',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-            ),
-            TextButton(
-              onPressed: () {},
-              child: Text(
-                'Voir tout',
-                style: GoogleFonts.poppins(
-                  color: const Color(0xFFFFCC00),
-                  fontSize: 14,
-                ),
-              ),
-            ),
-          ],
+        Text(
+          'Activités récentes',
+          style: GoogleFonts.poppins(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
         ),
         const SizedBox(height: 12),
-        if (_upcomingAppointments.isNotEmpty)
-          Column(
-            children: _upcomingAppointments.map((appointment) => _buildAppointmentCard(appointment)).toList(),
-          )
-        else
-          _buildEmptyState(
-            'Aucun devis accepté récemment',
-            'Les devis acceptés apparaîtront ici',
-            Icons.assignment_turned_in,
-          ),
+        _dernierDevisAccepte != null
+            ? _buildDevisCard(_dernierDevisAccepte!)
+            : _buildEmptyState(
+                'Aucune activité récente',
+                'Vous n\'avez pas encore d\'activité récente',
+                Icons.receipt_long,
+              ),
       ],
     );
   }
 
-  Widget _buildAppointmentCard(Map<String, dynamic> appointment) {
+  Widget _buildDevisCard(Map<String, dynamic> devis) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: Colors.grey[200]!),
@@ -496,52 +354,25 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: appointment['color'].withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.calendar_today,
-                    color: appointment['color'],
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        appointment['title'],
-                        style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w500,
-                          fontSize: 15,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        appointment['date'],
-                        style: GoogleFonts.poppins(
-                          color: Colors.grey[600],
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
+                Text(
+                  'Devis #${devis['id'] ?? 'N/A'}',
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
                   ),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: appointment['color'].withOpacity(0.1),
+                    color: Colors.green[50],
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    appointment['status'],
+                    'Accepté',
                     style: GoogleFonts.poppins(
-                      color: appointment['color'],
+                      color: Colors.green[700],
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                     ),
@@ -551,115 +382,23 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              appointment['service'],
+              'Montant: ${devis['montant']?.toString() ?? 'N/A'} FCFA',
               style: GoogleFonts.poppins(
-                color: Colors.grey[800],
                 fontSize: 14,
+                color: Colors.grey[700],
               ),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () {
-                      // Naviguer vers les devis
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => ClientCompletedQuotationsScreen(
-                          token: widget.token,
-                          userData: widget.userData,
-                        )),
-                      );
-                    },
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFFFFCC00)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: Text(
-                      'Voir devis',
-                      style: GoogleFonts.poppins(
-                        color: const Color(0xFFFFCC00),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () {},
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4CAF50),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: Text(
-                      'Contacter',
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            const SizedBox(height: 4),
+            Text(
+              'Date: ${devis['date']?.toString() ?? 'Date inconnue'}',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: Colors.grey[500],
+              ),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildRecentActivities() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Activités récentes',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                // Naviguer vers la recherche de professionnels
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => ProfessionalSearchScreen(
-                    token: widget.token,
-                    userData: widget.userData,
-                  )),
-                );
-              },
-              child: Text(
-                'Voir tout',
-                style: GoogleFonts.poppins(
-                  color: const Color(0xFFFFCC00),
-                  fontSize: 14,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        if (_recentActivities.isNotEmpty)
-          Column(
-            children: _recentActivities.map((activity) => _buildActivityItem(activity)).toList(),
-          )
-        else
-          _buildEmptyState(
-            'Aucune activité récente',
-            'Vos activités apparaîtront ici',
-            Icons.history,
-          ),
-      ],
     );
   }
 
@@ -670,224 +409,123 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              'Professionnels actifs',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
+            Expanded(
+              child: Text(
+                'Dernier pro avec devis',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
               ),
             ),
             TextButton(
               onPressed: () {
-                // Navigate to all professionals screen
+                // TODO: Naviguer vers la liste complète des professionnels
               },
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size(80, 36),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
               child: Text(
                 'Voir tout',
                 style: GoogleFonts.poppins(
-                  color: const Color(0xFFFFCC00),
                   fontSize: 14,
+                  color: Theme.of(context).primaryColor,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
-        if (_professionals.isEmpty)
-          _buildEmptyState(
-            'Aucun professionnel actif',
-            'Les professionnels avec lesquels vous avez des devis en cours apparaîtront ici',
-            Icons.people_outline,
-          )
-        else
-          SizedBox(
-            height: 200,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _professionals.length,
-              itemBuilder: (context, index) {
-                final professional = _professionals[index];
-                return Container(
-                  width: 160,
-                  margin: const EdgeInsets.only(right: 12),
-                  child: Card(
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        const SizedBox(height: 16),
-                        Stack(
-                          alignment: Alignment.topRight,
-                          children: [
-                            CircleAvatar(
-                              radius: 40,
-                              backgroundColor: Colors.grey[200],
-                              backgroundImage: professional.avatarUrl != null
-                                  ? CachedNetworkImageProvider(professional.avatarUrl!)
-                                  : null,
-                              child: professional.avatarUrl == null
-                                  ? Text(
-                                      '${professional.firstName[0]}${professional.lastName[0]}',
-                                      style: const TextStyle(
-                                          fontSize: 24, color: Color(0xFFFFCC00)),
-                                    )
-                                  : null,
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                professional.isFavorite
-                                    ? Icons.favorite
-                                    : Icons.favorite_border,
-                                color: professional.isFavorite
-                                    ? Colors.red
-                                    : Colors.grey[400],
-                                size: 20,
-                              ),
-                              onPressed: () => _toggleFavorite(professional),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          professional.fullName,
-                          style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          professional.profession,
-                          style: GoogleFonts.poppins(
-                            color: Colors.grey[600],
-                            fontSize: 12,
-                          ),
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.star,
-                              color: Colors.amber[600],
-                              size: 16,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              professional.rating.toStringAsFixed(1),
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: 120,
-                          child: ElevatedButton(
-                            onPressed: () {
-                              // Naviguer vers les détails du professionnel ou la recherche
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => ProfessionalSearchScreen(
-                                  token: widget.token,
-                                  userData: widget.userData,
-                                )),
-                              );
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFFFCC00),
-                              padding: const EdgeInsets.symmetric(vertical: 6),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            child: Text(
-                              'Contacter',
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
+        _dernierProDevis != null
+            ? _buildProfessionalCard(_dernierProDevis!)
+            : _buildEmptyState(
+                'Aucun professionnel récent',
+                'Vous n\'avez pas encore de professionnel avec devis',
+                Icons.people,
               ),
       ],
     );
   }
 
-  Widget _buildActivityItem(Map<String, dynamic> activity) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
+  Widget _buildProfessionalCard(Map<String, dynamic> professional) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 2,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        side: BorderSide(color: Colors.grey[200]!),
       ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: activity['color'].withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(activity['icon'], color: activity['color']),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  activity['title'],
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w500,
-                    fontSize: 15,
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(16),
+        leading: Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.grey[200]!),
+            image: professional['photo'] != null
+                ? DecorationImage(
+                    image: CachedNetworkImageProvider(
+                      '${AppConfig.baseUrl}${professional['photo']}',
+                    ),
+                    fit: BoxFit.cover,
+                  )
+                : const DecorationImage(
+                    image: AssetImage('assets/images/default_avatar.png'),
+                    fit: BoxFit.cover,
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  activity['date'],
-                  style: GoogleFonts.poppins(
-                    color: Colors.grey[600],
-                    fontSize: 13,
+          ),
+        ),
+        title: Text(
+          professional['nom'] ?? 'Professionnel',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              professional['metier'] ?? 'Métier non spécifié',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'Dernier contact',
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      color: Colors.blue[700],
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ],
             ),
-          ),
-          Text(
-            activity['amount'],
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w500,
-              color: activity['color'],
-            ),
-          ),
-        ],
+          ],
+        ),
+        trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+        onTap: () {
+          // TODO: Naviguer vers la page de détail du professionnel
+        },
       ),
     );
   }
@@ -916,11 +554,11 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
           const SizedBox(height: 8),
           Text(
             subtitle,
-            style: GoogleFonts.poppins(
-              color: Colors.grey[600],
-              fontSize: 14,
-            ),
             textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: Colors.grey[600],
+            ),
           ),
         ],
       ),

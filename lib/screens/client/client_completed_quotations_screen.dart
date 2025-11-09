@@ -83,7 +83,7 @@ class _ClientCompletedQuotationsScreenState extends State<ClientCompletedQuotati
   Future<void> _initializeData() async {
     // Récupérer le token depuis SharedPreferences comme secours
     final prefs = await SharedPreferences.getInstance();
-    final tokenFromPrefs = prefs.getString('access_token') ?? '';
+    final tokenFromPrefs = prefs.getString('token') ?? '';
 
     // Utiliser le token passé en argument, ou celui de SharedPreferences comme secours
     final finalToken = widget.token?.isNotEmpty == true ? widget.token! : tokenFromPrefs;

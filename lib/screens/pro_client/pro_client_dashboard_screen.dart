@@ -832,26 +832,8 @@ class _ProClientDashboardScreenState extends State<ProClientDashboardScreen> {
           children: [
             _buildModeGridCard(
               'Mes devis',
-              'Consulter mes demandes de devis',
+              'Consulter et gérer vos demandes de devis',
               Icons.inbox,
-              const Color(0xFF2196F3),
-              () => Navigator.pushNamed(
-                context,
-                '/pro-client/quotations',
-                arguments: {
-                  'token': _finalToken,
-                  'userData': widget.userData,
-                  'filters': {
-                    'user_id': currentUserId,
-                    'status': 'pending,quoted,accepted',
-                  },
-                },
-              ),
-            ),
-            _buildModeGridCard(
-              'Jobs actifs',
-              'Suivre l\'avancement de vos projets',
-              Icons.work,
               const Color(0xFF4CAF50),
               () => Navigator.pushNamed(context, '/pro-client/client-jobs', arguments: {
                 'token': _finalToken,

@@ -1,9 +1,19 @@
 import 'dart:convert';
+import 'dart:convert' show base64Decode;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
+import 'package:pdfx/pdfx.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:cross_file/cross_file.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../core/app_config.dart';
 import 'edit_professional_profile_screen.dart';
 
@@ -197,15 +207,45 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen> {
   }
 
   Widget _getProfessionalAvatar() {
-    // L'API peut retourner l'avatar dans 'avatar' ou dans 'profile_photo.url'
+    // Vérifier d'abord si on a une nouvelle image en base64
+    if (_professionalData?['avatar']?.startsWith('data:image/') ?? false) {
+      return Container(
+        width: 80,
+        height: 80,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: const Color(0xFF1E3A5F),
+            width: 3,
+          ),
+        ),
+        child: ClipOval(
+          child: Image.memory(
+            base64Decode(_professionalData!['avatar'].split(',').last),
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) => _buildDefaultAvatar(),
+          ),
+        ),
+      );
+    }
+
+    // Sinon, utiliser la logique existante
     String? avatarUrl;
 
     // Essaie d'abord profile_photo.url (structure API /api/professional/profile/me)
     final profilePhoto = _professionalData?['profile_photo'];
+    debugPrint('=== DEBUG AVATAR ===');
+    debugPrint('Profile Photo Data: $profilePhoto');
+    
     if (profilePhoto != null) {
       if (profilePhoto is Map<String, dynamic>) {
         // Structure: {path: "...", url: "...", type: "..."}
-        avatarUrl = profilePhoto['url'];
+        final String url = profilePhoto['url'] ?? '';
+        avatarUrl = '${AppConfig.baseUrl}$url';
+        debugPrint('Construction de l\'URL de l\'avatar:');
+        debugPrint('- URL de base: ${AppConfig.baseUrl}');
+        debugPrint('- Chemin relatif: $url');
+        debugPrint('- URL finale: $avatarUrl');
       } else if (profilePhoto is String) {
         // Structure alternative: URL directe
         avatarUrl = profilePhoto;
@@ -215,21 +255,24 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen> {
     // Essaie ensuite avatar (structure alternative)
     if (avatarUrl == null || avatarUrl.isEmpty) {
       avatarUrl = _professionalData?['avatar'];
+      if (avatarUrl != null) {
+        debugPrint('Avatar URL from avatar field: $avatarUrl');
+      }
     }
 
-    print('=== DEBUG AVATAR ===');
-    print('Profile photo: $profilePhoto');
-    print('Avatar URL trouvée: $avatarUrl');
+    // Log l'URL finale de l'avatar
+    if (avatarUrl != null) {
+      debugPrint('Final Avatar URL: $avatarUrl');
+    }
 
     return Container(
       width: 80,
       height: 80,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.grey[200],
         border: Border.all(
           color: const Color(0xFF1E3A5F),
-          width: 3,
+          width: 2,
         ),
       ),
       child: avatarUrl != null && avatarUrl.isNotEmpty
@@ -237,21 +280,48 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen> {
               child: CachedNetworkImage(
                 imageUrl: avatarUrl,
                 fit: BoxFit.cover,
-                placeholder: (context, url) => const CircularProgressIndicator(
-                  color: Color(0xFF1E3A5F),
+                httpHeaders: const {
+                  'Accept': '*/*',
+                },
+                cacheManager: DefaultCacheManager(),
+                fadeInDuration: const Duration(milliseconds: 500),
+                fadeOutDuration: const Duration(milliseconds: 500),
+                placeholder: (context, url) => const Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF1E3A5F),
+                    strokeWidth: 2,
+                  ),
                 ),
-                errorWidget: (context, url, error) => const Icon(
-                  Icons.business_center,
-                  color: Color(0xFF1E3A5F),
-                  size: 40,
-                ),
+                errorWidget: (context, url, error) {
+                  debugPrint('=== ERREUR DE CHARGEMENT DE L\'IMAGE ===');
+                  debugPrint('URL: $url');
+                  debugPrint('Erreur: $error');
+                  // Tentative de chargement direct avec l'URL alternative
+                  final alternativeUrl = '${AppConfig.baseUrl}/storage/${profilePhoto['path']}';
+                  debugPrint('Tentative avec URL alternative: $alternativeUrl');
+                  return Image.network(
+                    alternativeUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      debugPrint('Échec également avec l\'URL alternative: $error');
+                      return _buildDefaultAvatar();
+                    },
+                  );
+                },
               ),
             )
-          : const Icon(
-              Icons.business_center,
-              color: Color(0xFF1E3A5F),
-              size: 40,
-            ),
+          : _buildDefaultAvatar(),
+    );
+  }
+  
+  Widget _buildDefaultAvatar() {
+    return Container(
+      color: const Color(0xFFE8EAF6),
+      child: const Icon(
+        Icons.business_center,
+        color: Color(0xFF1E3A5F),
+        size: 40,
+      ),
     );
   }
 
@@ -653,38 +723,403 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen> {
   }
 
   Widget _buildDocumentItem(dynamic document) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey[200]!),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.insert_drive_file, color: Colors.grey[600], size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              document['name'] ?? 'Document',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.grey[800],
+    // Make the document row tappable to open the document URL
+    return InkWell(
+      onTap: () => _openDocument(document),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.insert_drive_file, color: Colors.grey[600], size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                document['name'] ?? 'Document',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  color: Colors.grey[800],
+                ),
               ),
             ),
-          ),
-          Text(
-            document['type'] ?? 'Type inconnu',
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              color: Colors.grey[500],
+            Text(
+              document['type'] ?? 'Type inconnu',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: Colors.grey[500],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            Icon(Icons.open_in_new, size: 18, color: Colors.grey[500]),
+          ],
+        ),
       ),
     );
   }
+
+  Future<void> _openDocument(dynamic document) async {
+    try {
+      String? url = document['url']?.toString() ?? document['path']?.toString() ?? document['file_path']?.toString() ?? document['filePath']?.toString();
+
+      if (url == null || url.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('URL du document introuvable')),
+        );
+        return;
+      }
+
+      // If the server returns a relative path like '/storage/...', build full URL
+      String fullUrl;
+      if (url.startsWith('/')) {
+        fullUrl = '${AppConfig.baseUrl}$url';
+      } else if (url.startsWith('http')) {
+        fullUrl = url;
+      } else {
+        // Try to append to base if it looks like a relative path without leading slash
+        fullUrl = '${AppConfig.baseUrl}/${url}';
+      }
+
+  debugPrint('Opening document URL: $fullUrl');
+
+  // Open the document inside the app in a popup viewer (PDF or image)
+  await _showDocumentPopup(fullUrl);
+    } catch (e) {
+      debugPrint('Error opening document: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur lors de l\'ouverture du document: $e')),
+      );
+    }
+  }
+
+  Future<void> _showDocumentPopup(String fullUrl) async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: SizedBox(
+            width: double.infinity,
+            height: MediaQuery.of(context).size.height * 0.8,
+            child: FutureBuilder<http.Response>(
+              future: http.get(
+                Uri.parse(fullUrl),
+                headers: {
+                  'Accept': '*/*',
+                  if (_token.isNotEmpty) 'Authorization': 'Bearer $_token',
+                },
+              ),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return _buildDocumentError('Erreur réseau: ${snapshot.error}');
+                }
+                final resp = snapshot.data;
+                if (resp == null) return _buildDocumentError('Réponse vide du serveur');
+                if (resp.statusCode != 200) {
+                  return _buildDocumentError('Erreur serveur: HTTP ${resp.statusCode}');
+                }
+
+                final contentType = resp.headers['content-type'] ?? '';
+                final bytes = resp.bodyBytes;
+                debugPrint('Document fetched: content-type=$contentType, bytes=${bytes.length}');
+
+                if (contentType.contains('pdf') || fullUrl.toLowerCase().endsWith('.pdf')) {
+                  // Render PDF using pdfx
+                  Future<PdfDocument> pdfFuture;
+                  try {
+                    pdfFuture = PdfDocument.openData(bytes);
+                  } catch (e, st) {
+                    debugPrint('PdfDocument.openData synchronous error: $e');
+                    debugPrint('$st');
+                    return _buildDocumentError('Impossible de charger le PDF (erreur locale)');
+                  }
+
+                  return FutureBuilder<PdfDocument>(
+                    future: pdfFuture,
+                    builder: (context, pdfSnap) {
+                      if (pdfSnap.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (pdfSnap.hasError) {
+                        debugPrint('Pdf load error: ${pdfSnap.error}');
+                        debugPrint('${pdfSnap.stackTrace}');
+                        // Provide a fallback: save bytes to a temporary file and let user open/share it
+                        return Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.picture_as_pdf, size: 48, color: Colors.red[400]),
+                              const SizedBox(height: 12),
+                              Text('Impossible de charger le PDF (erreur: ${pdfSnap.error})', textAlign: TextAlign.center),
+                              const SizedBox(height: 12),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ElevatedButton.icon(
+                                    icon: const Icon(Icons.open_in_new),
+                                    label: const Text('Ouvrir'),
+                                    onPressed: () async {
+                                      try {
+                                        final suggestedName = fullUrl.split('/').last;
+                                        await _saveAndOpenPdf(bytes, suggestedName);
+                                      } catch (e) {
+                                        debugPrint('Fallback open error: $e');
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text('Erreur lors de l\'ouverture du PDF: $e')),
+                                          );
+                                        }
+                                      }
+                                    },
+                                  ),
+                                  const SizedBox(width: 8),
+                                  ElevatedButton.icon(
+                                    icon: const Icon(Icons.download),
+                                    label: const Text('Télécharger'),
+                                    onPressed: () async {
+                                      try {
+                                        final suggestedName = fullUrl.split('/').last;
+                                        final savedPath = await _downloadPdf(bytes, suggestedName);
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text('Document téléchargé: $savedPath')),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        debugPrint('Download error: $e');
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text('Erreur lors du téléchargement: $e')),
+                                          );
+                                        }
+                                      }
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      // pdfFuture is available in the outer scope; pass it to the controller
+                      final controller = PdfController(document: pdfFuture);
+                      return PdfView(controller: controller);
+                    },
+                  );
+                } else if (contentType.startsWith('image/') || fullUrl.toLowerCase().endsWith('.jpg') || fullUrl.toLowerCase().endsWith('.png') || fullUrl.toLowerCase().endsWith('.jpeg')) {
+                  // Show image (add errorBuilder to surface issues) with download option
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: InteractiveViewer(
+                          panEnabled: true,
+                          minScale: 0.5,
+                          maxScale: 4.0,
+                          child: Center(
+                            child: Image.memory(
+                              bytes,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) {
+                                debugPrint('Image.memory error: $error');
+                                return _buildDocumentError('Impossible de charger l\'image');
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ElevatedButton.icon(
+                              icon: const Icon(Icons.download),
+                              label: const Text('Télécharger'),
+                              onPressed: () async {
+                                try {
+                                  final suggestedName = fullUrl.split('/').last;
+                                  final savedPath = await _downloadPdf(bytes, suggestedName);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Image téléchargée: $savedPath')),
+                                    );
+                                  }
+                                } catch (e) {
+                                  debugPrint('Image download error: $e');
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Erreur lors du téléchargement de l\'image: $e')),
+                                    );
+                                  }
+                                }
+                              },
+                            ),
+                            const SizedBox(width: 12),
+                            ElevatedButton.icon(
+                              icon: const Icon(Icons.open_in_new),
+                              label: const Text('Ouvrir'),
+                              onPressed: () async {
+                                try {
+                                  final suggestedName = fullUrl.split('/').last;
+                                  await _saveAndOpenPdf(bytes, suggestedName);
+                                } catch (e) {
+                                  debugPrint('Image open error: $e');
+                                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e')));
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                } else {
+                  // Fallback: show link with copy/open
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: SelectableText(fullUrl),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ElevatedButton(
+                            onPressed: () async {
+                              await Clipboard.setData(ClipboardData(text: fullUrl));
+                              if (mounted) Navigator.of(context).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('URL copiée')));
+                            },
+                            child: const Text('Copier l\'URL'),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton(
+                            onPressed: () async {
+                              final uri = Uri.parse(fullUrl);
+                              if (await canLaunchUrl(uri)) {
+                                await launchUrl(uri, mode: LaunchMode.externalApplication);
+                              }
+                            },
+                            child: const Text('Ouvrir'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                }
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDocumentError(String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 48, color: Colors.red[400]),
+            const SizedBox(height: 12),
+            Text(message, textAlign: TextAlign.center),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveAndOpenPdf(List<int> bytes, String fileName) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final safeName = fileName.isNotEmpty ? fileName : 'document.pdf';
+      final filePath = '${dir.path}/$safeName';
+      final file = File(filePath);
+      await file.writeAsBytes(bytes, flush: true);
+
+      // Use share_plus to open the file with available apps
+      final xfile = XFile(file.path);
+      await Share.shareXFiles([xfile], text: 'Ouverture du document');
+    } catch (e, st) {
+      debugPrint('Error saving/opening PDF: $e');
+      debugPrint('$st');
+      rethrow;
+    }
+  }
+
+  /// Save the PDF to a visible location (best-effort). Returns the saved path.
+  Future<String> _downloadPdf(List<int> bytes, String fileName) async {
+    try {
+      // Ensure permission when targeting public folders on Android
+      await _ensureStoragePermissionIfNeeded();
+
+      final safeName = fileName.isNotEmpty ? fileName : 'document.pdf';
+      Directory? baseDir;
+      if (Platform.isAndroid) {
+        // Try to write to the public Downloads folder first (best-effort)
+        final publicDownloads = Directory('/storage/emulated/0/Download');
+        try {
+          if (await publicDownloads.exists()) {
+            final target = File('${publicDownloads.path}/$safeName');
+            await target.writeAsBytes(bytes, flush: true);
+            return target.path;
+          }
+        } catch (e) {
+          debugPrint('Could not write to public Downloads directly: $e');
+        }
+        baseDir = await getExternalStorageDirectory();
+        // getExternalStorageDirectory may return a directory like /storage/emulated/0/Android/data/<pkg>/files
+        // We'll try to write into a Downloads folder inside it
+        if (baseDir != null) {
+          final downloadDir = Directory('${baseDir.path}/Download');
+          if (!await downloadDir.exists()) {
+            await downloadDir.create(recursive: true);
+          }
+          final target = File('${downloadDir.path}/$safeName');
+          await target.writeAsBytes(bytes, flush: true);
+          return target.path;
+        }
+      }
+
+      // Fallback: application documents directory (iOS or if external not available)
+      baseDir = await getApplicationDocumentsDirectory();
+      final target = File('${baseDir.path}/$safeName');
+      await target.writeAsBytes(bytes, flush: true);
+      return target.path;
+    } catch (e, st) {
+      debugPrint('Error writing download file: $e');
+      debugPrint('$st');
+      rethrow;
+    }
+  }
+
+  Future<void> _ensureStoragePermissionIfNeeded() async {
+    try {
+      if (!Platform.isAndroid) return;
+      // On Android 13+ scoped storage changed, but requesting storage permission is still safe for many devices
+      final status = await Permission.storage.status;
+      if (status.isGranted) return;
+      final result = await Permission.storage.request();
+      debugPrint('Storage permission result: $result');
+    } catch (e) {
+      debugPrint('Error requesting storage permission: $e');
+    }
+  }
+
+  
 
   Widget _buildSkillsCard() {
     final skillsData = _professionalData?['skills'];

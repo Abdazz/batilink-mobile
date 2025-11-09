@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io'; // Pour SocketException
 import 'package:batilink_mobile_app/core/app_config.dart';
+import 'package:batilink_mobile_app/utils/error_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -46,7 +49,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
   Future<void> _initializeData() async {
     // Récupérer le token depuis SharedPreferences comme secours
     final prefs = await SharedPreferences.getInstance();
-    final tokenFromPrefs = prefs.getString('access_token') ?? '';
+    final tokenFromPrefs = prefs.getString('token') ?? '';
 
     // Utiliser le token passé en argument, ou celui de SharedPreferences comme secours
     final finalToken = widget.token.isNotEmpty ? widget.token : tokenFromPrefs;
@@ -65,20 +68,43 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
   }
 
   Future<void> _loadUserProfile() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    // Vérifier d'abord la connexion Internet
+    final hasConnection = await ErrorHandler.checkInternetConnection();
+    if (!hasConnection) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Pas de connexion Internet';
+      });
+      return;
+    }
+
+    final token = _token;
+    if (token.isEmpty) {
+      await ErrorHandler.handleNetworkError(
+        Exception('Token manquant'),
+        StackTrace.current,
+        customMessage: 'Session expirée. Veuillez vous reconnecter.',
+      );
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Session expirée';
+      });
+      return;
+    }
+
+    print('=== DEBUG PROFIL CLIENT ===');
+    print('Token utilisé: ${token.substring(0, 20)}...');
+    print('Données utilisateur reçues lors du login: ${widget.userData}');
+
     try {
-      final token = _token;
       final authService = AuthService(baseUrl: AppConfig.baseUrl);
-
-      if (token.isEmpty) {
-        _showError('Token d\'authentification manquant');
-        return;
-      }
-
-      print('=== DEBUG PROFIL CLIENT ===');
-      print('Token utilisé: ${token.substring(0, 20)}...');
-      print('Données utilisateur reçues lors du login: ${widget.userData}');
-
       final response = await authService.getClientProfile(accessToken: token);
+      
       print('=== DEBUG: Réponse complète du serveur ===');
       print('Status: ${response.statusCode}');
       print('Headers: ${response.headers}');
@@ -88,8 +114,23 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
       if (response.statusCode != 200) {
         print('Échec API - Status: ${response.statusCode}');
         print('Corps de l\'erreur: ${response.body}');
+        
+        String errorMessage = 'Erreur lors de la récupération du profil';
+        
+        if (response.statusCode == 401) {
+          errorMessage = 'Session expirée. Veuillez vous reconnecter.';
+        } else if (response.statusCode >= 500) {
+          errorMessage = 'Erreur serveur. Veuillez réessayer plus tard.';
+        }
+        
+        await ErrorHandler.handleNetworkError(
+          Exception('Erreur HTTP ${response.statusCode}'),
+          StackTrace.current,
+          customMessage: errorMessage,
+        );
+        
         setState(() {
-          _errorMessage = 'Erreur lors de la récupération du profil (${response.statusCode})';
+          _errorMessage = errorMessage;
           _isLoading = false;
         });
         return;
@@ -174,14 +215,24 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
           });
         }
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Exception lors du chargement du profil: $e');
-      _showError('Erreur de connexion lors du chargement du profil: $e');
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+      
+      // Gestion des erreurs réseau spécifiques
+      String errorMessage = 'Erreur lors du chargement du profil';
+      
+      if (e is SocketException) {
+        errorMessage = 'Impossible de se connecter au serveur. Vérifiez votre connexion Internet.';
+      } else if (e is TimeoutException) {
+        errorMessage = 'La connexion a expiré. Veuillez réessayer.';
       }
+      
+      await ErrorHandler.handleNetworkError(e, stackTrace);
+      
+      setState(() {
+        _errorMessage = errorMessage;
+        _isLoading = false;
+      });
     }
   }
 
@@ -813,13 +864,29 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 8.0),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _buildStatItem(_totalJobs.toString(), 'Devis envoyés'),
-            _buildStatItem(_totalFavorites.toString(), 'Professionnels favoris'),
-            _buildStatItem(_totalReviews.toString(), 'Projets terminés'),
+            Expanded(
+              child: _buildStatItem(_totalJobs.toString(), 'Devis'),
+            ),
+            Container(
+              height: 40,
+              width: 1,
+              color: Colors.grey[300],
+            ),
+            Expanded(
+              child: _buildStatItem(_totalFavorites.toString(), 'Favoris'),
+            ),
+            Container(
+              height: 40,
+              width: 1,
+              color: Colors.grey[300],
+            ),
+            Expanded(
+              child: _buildStatItem(_totalReviews.toString(), 'Terminés'),
+            ),
           ],
         ),
       ),
@@ -828,22 +895,26 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
   Widget _buildStatItem(String value, String label) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           value,
           style: GoogleFonts.poppins(
-            fontSize: 24,
+            fontSize: 20,
             fontWeight: FontWeight.bold,
             color: const Color(0xFFFFCC00),
           ),
         ),
+        const SizedBox(height: 4),
         Text(
           label,
           style: GoogleFonts.poppins(
-            fontSize: 12,
+            fontSize: 11,
             color: Colors.grey[600],
           ),
           textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     );

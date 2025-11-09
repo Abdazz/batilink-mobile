@@ -47,6 +47,154 @@ class _ProClientRespondQuotationsScreenState extends State<ProClientRespondQuota
     });
   }
 
+  List<Widget> _buildStatusChips() {
+    const statuses = [
+      {'key': 'all', 'label': 'Tous'},
+      {'key': 'pending', 'label': 'En attente'},
+      {'key': 'quoted', 'label': 'Devis reçus'},
+      {'key': 'accepted', 'label': 'Acceptés'},
+      {'key': 'in_progress', 'label': 'En cours'},
+      {'key': 'completed', 'label': 'Terminés'},
+      {'key': 'cancelled', 'label': 'Annulés'},
+      {'key': 'rejected', 'label': 'Refusés'},
+    ];
+    return statuses.map((s) {
+      final selected = _statusFilter == s['key'];
+      return Padding(
+        padding: const EdgeInsets.only(right: 8.0),
+        child: ChoiceChip(
+          label: Text(s['label'] as String, style: GoogleFonts.poppins(fontSize: 12)),
+          selected: selected,
+          selectedColor: Colors.black.withOpacity(0.08),
+          backgroundColor: Colors.white,
+          shape: StadiumBorder(side: BorderSide(color: selected ? Colors.black : Colors.grey.shade300)),
+          onSelected: (_) => setState(() {
+            _statusFilter = s['key'] as String;
+            _loadQuotations();
+          }),
+        ),
+      );
+    }).toList();
+  }
+
+  // Méthode pour obtenir le libellé du statut
+  String _getStatusLabel(String status) {
+    switch (status) {
+      case 'pending':
+        return 'En attente';
+      case 'quoted':
+        return 'Devis reçu';
+      case 'accepted':
+        return 'Accepté';
+      case 'in_progress':
+        return 'En cours';
+      case 'completed':
+        return 'Terminé';
+      case 'cancelled':
+        return 'Annulé';
+      case 'rejected':
+        return 'Refusé';
+      default:
+        return status;
+    }
+  }
+
+  // Méthode pour obtenir la couleur du statut
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'pending':
+        return Colors.orange;
+      case 'quoted':
+        return Colors.blue;
+      case 'accepted':
+        return Colors.green;
+      case 'in_progress':
+        return Colors.purple;
+      case 'completed':
+        return Colors.green;
+      case 'cancelled':
+        return Colors.red;
+      case 'rejected':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  // Méthode pour construire l'état vide
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.assignment_outlined,
+            size: 64,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32.0),
+            child: Column(
+              children: [
+                Text(
+                  _statusFilter == 'all'
+                      ? 'Aucun devis pour le moment'
+                      : 'Aucun devis ${_getStatusLabel(_statusFilter).toLowerCase()} pour le moment',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _statusFilter == 'all'
+                      ? 'Les nouveaux devis apparaîtront ici'
+                      : 'Essayez un autre filtre ou revenez plus tard',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.grey[500],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Méthode utilitaire pour construire une ligne de détail
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        children: [
+          Text(
+            '$label : ',
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.w500,
+              fontSize: 13,
+              color: Colors.grey[700],
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _initializeData() async {
     _isProClient = _detectProClientRole();
 
@@ -88,32 +236,6 @@ class _ProClientRespondQuotationsScreenState extends State<ProClientRespondQuota
     return false;
   }
 
-  List<Widget> _buildStatusChips() {
-    const statuses = [
-      {'key': 'all', 'label': 'Tous'},
-      {'key': 'pending', 'label': 'En attente'},
-      {'key': 'quoted', 'label': 'Devis reçus'},
-      {'key': 'accepted', 'label': 'Acceptés'},
-      {'key': 'in_progress', 'label': 'En cours'},
-      {'key': 'completed', 'label': 'Terminés'},
-      {'key': 'cancelled', 'label': 'Annulés'},
-      {'key': 'rejected', 'label': 'Refusés'},
-    ];
-    return statuses.map((s) {
-      final selected = _statusFilter == s['key'];
-      return Padding(
-        padding: const EdgeInsets.only(right: 8.0),
-        child: ChoiceChip(
-          label: Text(s['label'] as String, style: GoogleFonts.poppins(fontSize: 12)),
-          selected: selected,
-          selectedColor: Colors.black.withOpacity(0.08),
-          backgroundColor: Colors.white,
-          shape: StadiumBorder(side: BorderSide(color: selected ? Colors.black : Colors.grey.shade300)),
-          onSelected: (_) => setState(() => _statusFilter = s['key'] as String),
-        ),
-      );
-    }).toList();
-  }
 
   Future<void> _ensureQuotationDetails(String quotationId) async {
     if (_fetchingDetails.contains(quotationId) || _finalToken.isEmpty) return;
@@ -165,16 +287,8 @@ class _ProClientRespondQuotationsScreenState extends State<ProClientRespondQuota
   }
 
   // Méthode utilitaire pour convertir une liste de données en List<Map<String, dynamic>>
-  List<Map<String, dynamic>> _convertToListMapStringDynamic(dynamic data) {
-    if (data == null) return [];
-    if (data is List) {
-      return data.map<Map<String, dynamic>>((item) => _convertToMapStringDynamic(item)).toList();
-    }
-    return [];
-  }
 
   Future<void> _loadQuotations() async {
-    if (_finalToken == null) return;
 
     if (mounted) {
       setState(() {
@@ -269,31 +383,6 @@ class _ProClientRespondQuotationsScreenState extends State<ProClientRespondQuota
     }
   }
 
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        children: [
-          Text(
-            '$label: ',
-            style: GoogleFonts.poppins(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: Colors.grey[700],
-            ),
-          ),
-          Text(
-            value,
-            style: GoogleFonts.poppins(
-              fontSize: 13,
-              color: Colors.black87,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildQuotationCard(dynamic quotation) {
     if (quotation == null) {
@@ -567,175 +656,119 @@ class _ProClientRespondQuotationsScreenState extends State<ProClientRespondQuota
       ),
     );
   } catch (e, stackTrace) {
-    print('Erreur lors de la construction de la carte de devis: $e\n$stackTrace');
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Erreur d\'affichage du devis',
-              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+  print('Erreur lors de la construction de la carte de devis: $e\n$stackTrace');
+  return Card(
+    margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+    child: Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Erreur d\'affichage du devis',
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+          ),
+          const SizedBox(height: 8),
+          Text('Détails: ${e.toString()}'),
+          if (quotation != null) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Données brutes du devis:',
+              style: TextStyle(fontStyle: FontStyle.italic),
             ),
-            SizedBox(height: 8),
-            Text('Détails: ${e.toString()}'),
-            if (quotation != null) ...[
-              SizedBox(height: 8),
-              Text(
-                'Données brutes du devis:',
-                style: TextStyle(fontStyle: FontStyle.italic),
-              ),
-              Text(quotation.toString()),
-            ],
+            Text(quotation.toString()),
           ],
-        ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }
-        Color _getStatusColor(String status) {
-    switch (status) {
-      case 'pending':
-        return Colors.orange;
-      case 'quoted':
-        return Colors.blue;
-      case 'accepted':
-        return Colors.green;
-      case 'in_progress':
-      case 'started':
-        return Colors.blueAccent;
-      case 'completed':
-        return Colors.green;
-      case 'cancelled':
-      case 'rejected':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
   }
-
-  String _getStatusLabel(String status) {
-    switch (status) {
-      case 'pending':
-        return 'En attente';
-      case 'quoted':
-        return 'Devis envoyé';
-      case 'accepted':
-        return 'Accepté';
-      case 'in_progress':
-      case 'started':
-        return 'En cours';
-      case 'completed':
-        return 'Terminé';
-      case 'cancelled':
-        return 'Annulé';
-      case 'rejected':
-        return 'Refusé';
-      default:
-        return status;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final mode = widget.filterMode ?? 'pending';
     return Scaffold(
       appBar: AppBar(
-        title: Text(mode == 'active' ? 'Mes jobs (pro)' : 'Répondre aux devis'),
-        elevation: 0,
+        title: Text(
+          'Mes Devis',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        elevation: 0,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFCC00)),
+              ),
+            )
           : _errorMessage != null
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.error_outline, color: Colors.red, size: 50),
-                      const SizedBox(height: 16),
-                      Text(
-                        _errorMessage!,
-                        style: const TextStyle(color: Colors.red, fontSize: 16),
-                        textAlign: TextAlign.center,
+                      Icon(
+                        Icons.error_outline,
+                        size: 64,
+                        color: Colors.red[400],
                       ),
                       const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Text(
+                          _errorMessage!,
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            color: Colors.grey[800],
+                            height: 1.4,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
                       ElevatedButton(
                         onPressed: _loadQuotations,
                         style: ElevatedButton.styleFrom(
-                          foregroundColor: Colors.white,
                           backgroundColor: const Color(0xFFFFCC00),
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                         ),
-                        child: const Text('Réessayer'),
+                        child: Text(
+                          'Réessayer',
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ],
                   ),
                 )
-              : Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                      color: Colors.grey[50],
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(children: _buildStatusChips()),
+              : RefreshIndicator(
+                  onRefresh: _loadQuotations,
+                  color: const Color(0xFFFFCC00),
+                  child: Column(
+                    children: [
+                      // Barre de filtres
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                        color: Colors.grey[50],
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: _buildStatusChips(),
+                          ),
+                        ),
                       ),
-                    ),
-                    
-                    Expanded(
-                      child: _quotations.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.inbox_outlined,
-                                    size: 60,
-                                    color: Colors.grey[400],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'Aucun devis à afficher',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: Colors.grey[600],
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    mode == 'active'
-                                        ? 'Vous n\'avez pas encore de projets en cours ou terminés.'
-                                        : 'Vous n\'avez pas encore de demandes de devis.',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey[500],
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 24),
-                                  ElevatedButton(
-                                    onPressed: _loadQuotations,
-                                    style: ElevatedButton.styleFrom(
-                                      foregroundColor: Colors.white,
-                                      backgroundColor: const Color(0xFFFFCC00),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                    ),
-                                    child: const Text('Actualiser'),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : RefreshIndicator(
-                              onRefresh: _loadQuotations,
-                              child: ListView.builder(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
+                      // Contenu principal
+                      Expanded(
+                        child: _quotations.isEmpty
+                            ? _buildEmptyState()
+                            : ListView.builder(
+                                padding: const EdgeInsets.only(top: 8, bottom: 24),
                                 itemCount: _quotations.length,
                                 itemBuilder: (context, index) {
                                   final quotation = _quotations[index];
@@ -748,11 +781,11 @@ class _ProClientRespondQuotationsScreenState extends State<ProClientRespondQuota
                                   return _buildQuotationCard(quotation);
                                 },
                               ),
-                            ),
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
-      floatingActionButton: _isProClient && mode == 'pending'
+      floatingActionButton: _isProClient && widget.filterMode == 'pending' && _quotations.isNotEmpty
           ? FloatingActionButton(
               onPressed: () {
                 // Action pour créer un nouveau devis

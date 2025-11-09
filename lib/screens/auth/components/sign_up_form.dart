@@ -9,12 +9,16 @@ class SignUpForm extends StatefulWidget {
   final GlobalKey<FormState> formKey;
   final bool centerButton;
   final String? role;
+  final Function(bool)? onLoading;
+  final Function(String)? onError;
 
   const SignUpForm({
     Key? key,
     required this.formKey,
     this.centerButton = false,
     this.role,
+    this.onLoading,
+    this.onError,
   }) : super(key: key);
 
   @override
@@ -39,6 +43,38 @@ class _SignUpFormState extends State<SignUpForm> {
   late String _password;
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
+  bool _termsAccepted = false;
+
+  Widget _buildSubmitButton() {
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        minimumSize: const Size(double.infinity, 50),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        elevation: 2,
+      ),
+      onPressed: _loading || !_termsAccepted ? null : _submit,
+      child: _loading
+          ? const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            )
+          : const Text(
+              'S\'INSCRIRE',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.1,
+              ),
+            ),
+    );
+  }
 
   @override
   void dispose() {
@@ -49,12 +85,18 @@ class _SignUpFormState extends State<SignUpForm> {
 
   Future<void> _submit() async {
     if (!widget.formKey.currentState!.validate()) return;
+    if (!_termsAccepted) {
+      final error = 'Veuvez accepter les conditions d\'utilisation';
+      setState(() => _error = error);
+      widget.onError?.call(error);
+      return;
+    }
     widget.formKey.currentState!.save();
     
-    setState(() { 
-      _loading = true; 
-      _error = null; 
-    });
+    setState(() => _loading = true);
+    widget.onLoading?.call(true);
+    setState(() => _error = null);
+    widget.onError?.call('');
 
     try {
       final role = widget.role ?? 'client';
@@ -136,21 +178,19 @@ class _SignUpFormState extends State<SignUpForm> {
       });
     } catch (e) {
       print('Erreur lors de l\'inscription: $e');
-      setState(() {
-        _loading = false;
-        // Message plus spécifique pour les erreurs de connexion
-        if (e.toString().contains('Failed host lookup') || e.toString().contains('No address')) {
-          _error = "Problème DNS: Le nom de domaine ne peut pas être résolu. Essayez de changer de réseau (WiFi/mobile) ou utilisez un VPN.";
-        } else if (e.toString().contains('Operation not permitted') || e.toString().contains('errno = 1')) {
-          _error = "Problème de sécurité réseau: L'appareil bloque la connexion sécurisée. Essayez de changer de réseau WiFi ou activez un VPN.";
-        } else if (e.toString().contains('ClientException') || e.toString().contains('connection')) {
-          _error = "Erreur de connexion. Vérifiez votre connexion internet et réessayez.";
-        } else if (e.toString().contains('TimeoutException')) {
-          _error = "Délai d'attente dépassé. Veuillez réessayer.";
-        } else {
-          _error = "Erreur de connexion au serveur. Veuillez réessayer.";
-        }
-      });
+      String errorMessage;
+      if (e.toString().contains('TimeoutException')) {
+        errorMessage = "Délai d'attente dépassé. Veuillez réessayer.";
+      } else {
+        errorMessage = 'Une erreur est survenue. Veuillez réessayer.';
+      }
+      setState(() => _error = errorMessage);
+      widget.onError?.call(errorMessage);
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+        widget.onLoading?.call(false);
+      }
     }
   }
 
@@ -161,24 +201,62 @@ class _SignUpFormState extends State<SignUpForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const TextFieldName(text: "Prénom"),
-          TextFormField(
-            decoration: const InputDecoration(hintText: "John"),
-            validator: RequiredValidator(errorText: "Prénom requis"),
-            onSaved: (firstName) => _firstName = firstName!,
-          ),
-          const SizedBox(height: defaultPadding),
-          const TextFieldName(text: "Nom"),
-          TextFormField(
-            decoration: const InputDecoration(hintText: "Doe"),
-            validator: RequiredValidator(errorText: "Nom requis"),
-            onSaved: (lastName) => _lastName = lastName!,
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const TextFieldName(text: "Prénom"),
+                    TextFormField(
+                      decoration: const InputDecoration(
+                        hintText: "John",
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                      validator: RequiredValidator(errorText: "Prénom requis"),
+                      onSaved: (firstName) => _firstName = firstName!,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const TextFieldName(text: "Nom"),
+                    TextFormField(
+                      decoration: const InputDecoration(
+                        hintText: "Doe",
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: RequiredValidator(errorText: "Nom requis"),
+                      onSaved: (lastName) => _lastName = lastName!,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: defaultPadding),
           const TextFieldName(text: "Email"),
           TextFormField(
             keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(hintText: "test@email.com"),
+            decoration: const InputDecoration(
+              hintText: "test@email.com",
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.email_outlined),
+            ),
             validator: EmailValidator(errorText: "Email invalide"),
             onSaved: (email) => _email = email!,
           ),
@@ -186,7 +264,11 @@ class _SignUpFormState extends State<SignUpForm> {
           const TextFieldName(text: "Téléphone"),
           TextFormField(
             keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(hintText: "+123456789"),
+            decoration: const InputDecoration(
+              hintText: "+123456789",
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.phone_outlined),
+            ),
             validator: RequiredValidator(errorText: "Numéro de téléphone requis"),
             onSaved: (phone) => _phoneNumber = phone!,
           ),
@@ -195,7 +277,11 @@ class _SignUpFormState extends State<SignUpForm> {
           TextFormField(
             controller: _passwordController,
             obscureText: true,
-            decoration: const InputDecoration(hintText: "••••••"),
+            decoration: const InputDecoration(
+              hintText: "••••••",
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.lock_outline),
+            ),
             validator: (val) {
               if (val == null || val.isEmpty) {
                 return 'Mot de passe requis';
@@ -217,7 +303,11 @@ class _SignUpFormState extends State<SignUpForm> {
           TextFormField(
             controller: _confirmPasswordController,
             obscureText: true,
-            decoration: const InputDecoration(hintText: "••••••"),
+            decoration: const InputDecoration(
+              hintText: "••••••",
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.lock_outline),
+            ),
             validator: (val) {
               if (val == null || val.isEmpty) {
                 return 'Veuillez confirmer votre mot de passe';
@@ -235,40 +325,34 @@ class _SignUpFormState extends State<SignUpForm> {
               style: const TextStyle(color: Colors.red),
               textAlign: TextAlign.center,
             ),
-          if (widget.centerButton)
-            Center(
-              child: SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: _loading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text(
-                          'S\'inscrire',
-                          style: TextStyle(fontSize: 16),
-                        ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Checkbox(
+                value: _termsAccepted,
+                onChanged: (value) {
+                  setState(() {
+                    _termsAccepted = value ?? false;
+                  });
+                },
+              ),
+              const Expanded(
+                child: Text(
+                  "J'accepte les conditions d'utilisation et la politique de confidentialité",
+                  style: TextStyle(fontSize: 14),
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (widget.centerButton)
+            Center(
+              child: _buildSubmitButton(),
             )
           else
-            ElevatedButton(
-              onPressed: _loading ? null : _submit,
-              child: _loading
-                  ? const CircularProgressIndicator()
-                  : const Text('S\'inscrire'),
+            SizedBox(
+              width: double.infinity,
+              child: _buildSubmitButton(),
             ),
         ],
       ),
